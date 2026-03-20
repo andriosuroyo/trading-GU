@@ -671,20 +671,44 @@ InpNYUseBreakeven=true
 
 | Risk | Mitigation |
 |------|------------|
-| Session misclassification (DST bug) | `InpAutoDetectDST` can be disabled; manual offset input added as escape hatch |
+| Session misclassification (DST bug) | Dynamic GMT calculation tested across DST transitions |
 | Breakeven modify fails repeatedly | Max 3 retries; doesn't block partial close |
-| Commission detection wrong | Manual override input: `InpManualCommissionPerLot` (0 = auto-detect) |
+| Commission detection wrong | Hardcoded $4.00 fallback; SymbolInfo + history scan as primary |
 | Backward compatibility break | `InpUseSessionTiming` opt-in; default false for v2.2 behavior |
 
 ---
 
-## 9. Open Questions (Pre-Implementation)
+## 9. Decisions Log
 
-1. **Escape hatch for commission:** Should I add `InpManualCommissionPerLot` input (0 = auto, >0 = override)?
-2. **DST manual override:** Should I add `InpManualGMTOffset` for emergency use?
-3. **Breakeven logging:** Log every breakeven attempt to CSV for audit trail?
+| Question | Decision | Rationale |
+|----------|----------|-----------|
+| Commission escape hatch | **REJECTED** | Hardcoded $4.00 fallback only |
+| DST manual override | **REJECTED** | Dynamic calculation only, no user override |
+| Breakeven audit trail | **ACCEPTED** | Log all attempts to CSV |
 
-**Answer these before I proceed to implementation.**
+## 10. Breakeven Audit Trail Specification
+
+**File:** `tcm_breakeven_log.csv` (FILE_COMMON)
+
+**Columns:**
+1. `Timestamp` — datetime of attempt
+2. `PositionTicket` — ulong
+3. `Session` — string (ASIA/LONDON/NY/etc.)
+4. `Result` — string (SUCCESS/SKIP_TIGHTER/FAIL_MARKET_CLOSE/FAIL_OTHER)
+5. `EntryPrice` — double
+6. `TargetSL` — double
+7. `PreviousSL` — double
+8. `AdjustmentPoints` — double (commission + spread)
+9. `CommissionUsed` — double
+10. `ErrorCode` — int (0 if success)
+
+**Function Signature:**
+```mq5
+void LogBreakevenAttempt(ulong ticket, string result, double targetSL, 
+                         double prevSL, double adjustmentPts, int error);
+```
+
+**Rotation:** File appended, no automatic cleanup. Manual archive recommended monthly.
 
 ---
 
@@ -714,7 +738,10 @@ InpNYUseBreakeven=true
 
 ---
 
-**RFC Status:** Awaiting final approval on Open Questions #9 before implementation begins.
+**RFC Status:** ✅ APPROVED — Ready for implementation
+
+**Implementation Priority:** Begin after TCM v2.2.0 testing completes
+**Estimated Effort:** 2-3 hours coding, 4-6 hours testing
 
 *Prepared by: Viktor Kozlov (MQ5 Systems Architect)*  
 *Date: 2026-03-20*

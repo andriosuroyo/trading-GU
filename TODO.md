@@ -82,7 +82,7 @@
 
 | Feature | Target Version | Status | Priority | Notes |
 |---------|---------------|--------|----------|-------|
-| **Breakeven Protection** | 2.3.0 | [RFC] | HIGH | Move SL to entry after partial close in profit |
+| **Breakeven Protection** | 2.3.0 | [IMPL] | HIGH | Move SL to entry after partial close in profit — RFC 001 approved |
 | **News Blackout** | 2.3.0 or 2.4.0 | [RFC] | HIGH | Pause closes during NFP/FOMC (5 min before/after) |
 | **Dynamic Spread Filter** | 2.3.0 or 2.4.0 | [RFC] | MEDIUM | Session-based spread thresholds |
 | **Daily Loss Circuit Breaker** | 2.4.0 | [RFC] | MEDIUM | Stop monitoring if daily loss > threshold |
