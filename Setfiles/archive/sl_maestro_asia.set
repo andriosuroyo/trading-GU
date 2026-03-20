@@ -1,0 +1,29 @@
+; SL Maestro Asia
+; Stop Loss Management for Asia Session
+; Applies ATR-based SL with session-specific multipliers
+; Session: Asia (00:00-08:00 UTC)
+; Created: 2026-03-13
+
+[Common]
+
+[Tester]
+
+[Expert]
+InpCommentFilter=GU_ASIA
+InpSession=Asia
+; ATR Settings
+InpATRPeriod=60
+InpATRTimeframe=1
+; Session Multiplier
+InpATRMultiplier=1.5
+; Floor and Cap (pips)
+InpSLFloor=150
+InpSLCap=300
+; Trading Hours
+InpStartHour=0
+InpEndHour=8
+; Apply to Magic Numbers
+InpMagicNumbers=11,21,31
+; Update Settings
+InpUpdateInterval=60
+InpTrailingEnabled=false

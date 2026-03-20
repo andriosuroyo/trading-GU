@@ -1,0 +1,40 @@
+; SL Maestro Configuration - London Session
+; Targets Comment: GU_LONDON (all London strategies: MH, HR10, HR05)
+; Session: London (08:00-12:00 UTC)
+; ATR Settings: M1 ATR(60), 2.5x multiplier
+; SL Range: 200-400 pips (2000-4000 points) -> Config values: 200-400
+; Created: 20260317
+
+sep_positions_to_include=>>  P O S I T I O N S   T O   I N C L U D E
+comment_to_include=GU_LONDON
+magic_number_to_include=
+
+sep_stop_loss_type=>>  S T O P   L O S S   S E T T I N G S
+sl_type=4
+sl_add_spread=true
+sl_offset=0.0
+fixed_stop_loss=200.0
+stop_loss_percentage=1.0
+
+sep_sl_atr_based=>>  S L   M A E S T R O   -   A T R   B A S E D
+sl_atr_timeframe=1
+sl_atr_period=60
+sl_atr_multiplier=2.5
+sl_atr_min=200.0
+sl_atr_max=400.0
+
+sep_sl_swing=>>  S T O P   L O S S   -   S W I N G   H I G H / L O W   (N O T   U S E D)
+sl_swing_timeframe=0
+sl_swing_start_candle=1
+sl_swing_end_candle=10
+sl_swing_min_distance=0.0
+
+sep_weekday_filter=>>  W E E K D A Y   F I L T E R
+weekday_time_source=0
+trade_on_monday=true
+trade_on_tuesday=true
+trade_on_wednesday=true
+trade_on_thursday=true
+trade_on_friday=true
+trade_on_saturday=true
+trade_on_sunday=true

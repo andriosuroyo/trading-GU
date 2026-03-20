@@ -1,0 +1,27 @@
+; GU HR05 Asia (Hourly Range 0.5%)
+; Magic Number: 21
+; Comment: GU_ASIA
+; Strategy: HR05 (Hourly Range 0.5%) for Asia Session
+; Created: 2026-03-13
+
+[Common]
+
+[Tester]
+
+[Expert]
+InpMagicNumber=21
+InpComment=GU_ASIA
+InpStrategy=HR05
+InpSession=Asia
+; ATR Settings
+InpATRPeriod=60
+InpATRMultiplier=1.5
+InpSLFloor=150
+InpSLCap=300
+; Trading Hours (Asia: 00:00-08:00 UTC)
+InpStartHour=0
+InpEndHour=8
+; Trade Settings
+InpLotSize=0.01
+InpMaxSpread=50
+InpSlippage=10

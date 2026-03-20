@@ -1,0 +1,68 @@
+; GU HR10 Full-Time (TimeCutoffManager Controlled - Conservative)
+; Magic Number: 20
+; Comment: GU_FULL
+; Strategy: HR10 - MA 10/40 on M1
+; Session: Full-Time (No time restraint - controlled by TCM)
+; Created: 20260317
+
+[Common]
+
+[Tester]
+
+[Expert]
+InpMagicNumber=20
+InpCommentTag=GU_FULL
+InpStrategy=HR10
+InpSession=Full
+; Entry Settings
+InpMATF=1
+InpMAFast=10
+InpMASlow=40
+InpStartOpenTwo=false
+InpStartTwoMode=2
+; Lot Settings (Conservative 0.02 lots)
+InpInitialLots=0.02
+InpLotMultiplier=1.0
+InpMaxLevels=1
+InpMaxSingleLot=1.0
+InpMaxTotalLots=1.0
+; Grid/Step Settings (Disabled - using time-based cutoff)
+InpUseATRStep=false
+InpStepATRMult=0.0
+InpStepPoints=0
+; TP Settings - Conservative $1.00 with trailing
+InpUseATRTPTarget=false
+InpATRPeriod=60
+InpTPIATRMult=0.0
+InpTargetProfitMoney=2.00
+; Trailing Stop Settings (Conservative: $0.50 / $0.40)
+InpUseBasketTrail=true
+InpTrailStartMoney=0.60
+InpTrailStepMoney=0.20
+; Time Settings - NO RESTRAINT (TCM controlled)
+InpUseTradingHours=false
+InpStartHour=0
+InpEndHour=23
+InpMaxBasketHours=1
+InpAvoidOvernight=true
+; News Filter
+InpUseNewsFilter=true
+InpNewsBlockBeforeMin=30
+InpNewsBlockAfterMin=30
+InpNewsMinImportance=2
+; Risk Management
+InpDailyLossStopPct=28.0
+InpMaxDDFromPeakPct=28.0
+InpEquityHardStopPct=28.0
+; Spread/Slippage
+InpSlippagePoints=15
+InpMaxSpreadPoints=30
+InpUseDynamicSpread=true
+InpSpreadPctOfPrice=0.0003
+; Cooldown
+InpCooldownMin=1
+; Other
+InpBypassFiltersOnStart=false
+InpPartialClose=false
+InpPartialPct=0.0
+InpVerbose=true

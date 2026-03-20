@@ -1,0 +1,68 @@
+; GU MH NY (Default Single Position - Time-Based Cutoff)
+; Magic Number: 13
+; Comment: GU_NEWYORK
+; Strategy: MH (Momentum Hunter) - MA 20/80 on M1
+; Session: New York (17:00-21:00 UTC)
+; Created: 20260317
+
+[Common]
+
+[Tester]
+
+[Expert]
+InpMagicNumber=13
+InpCommentTag=GU_NEWYORK
+InpStrategy=MH
+InpSession=NY
+; Entry Settings
+InpMATF=1
+InpMAFast=20
+InpMASlow=80
+InpStartOpenTwo=false
+InpStartTwoMode=2
+; Lot Settings
+InpInitialLots=0.10
+InpLotMultiplier=1.0
+InpMaxLevels=1
+InpMaxSingleLot=1.0
+InpMaxTotalLots=1.0
+; Grid/Step Settings (Disabled - using time-based cutoff)
+InpUseATRStep=false
+InpStepATRMult=0.0
+InpStepPoints=0
+; TP Settings - Fixed $6.00 with trailing
+InpUseATRTPTarget=false
+InpATRPeriod=60
+InpTPIATRMult=0.0
+InpTargetProfitMoney=20.00
+; Trailing Stop Settings
+InpUseBasketTrail=true
+InpTrailStartMoney=5.00
+InpTrailStepMoney=1.00
+; Time Settings - NY 17:00-21:00 UTC
+InpUseTradingHours=true
+InpStartHour=17
+InpEndHour=21
+InpMaxBasketHours=1
+InpAvoidOvernight=true
+; News Filter
+InpUseNewsFilter=true
+InpNewsBlockBeforeMin=30
+InpNewsBlockAfterMin=30
+InpNewsMinImportance=2
+; Risk Management
+InpDailyLossStopPct=28.0
+InpMaxDDFromPeakPct=28.0
+InpEquityHardStopPct=28.0
+; Spread/Slippage
+InpSlippagePoints=15
+InpMaxSpreadPoints=30
+InpUseDynamicSpread=true
+InpSpreadPctOfPrice=0.0003
+; Cooldown
+InpCooldownMin=1
+; Other
+InpBypassFiltersOnStart=false
+InpPartialClose=false
+InpPartialPct=0.0
+InpVerbose=true

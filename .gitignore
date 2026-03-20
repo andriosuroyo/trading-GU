@@ -1,0 +1,39 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+.env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Agent-specific files (local only)
+.agents/
+
+# Archives (keep structure, ignore large files)
+archive/*.zip
+archive/*.tar
+archive/*.rar
+
+# Large data files (keep structure, ignore actual data if needed)
+# Uncomment if data files are too large for git
+# data/*.csv
+# data/*.json
+# tick_data/*.csv
+
+# MetaTrader compiled files (optional - these can be regenerated)
+# Experts/*.ex5
