@@ -7,7 +7,6 @@ __pycache__/
 
 # Virtual environments
 venv/
-.env/
 .venv/
 
 # IDE
@@ -29,11 +28,10 @@ archive/*.zip
 archive/*.tar
 archive/*.rar
 
-# Large data files (keep structure, ignore actual data if needed)
-# Uncomment if data files are too large for git
-# data/*.csv
-# data/*.json
-# tick_data/*.csv
+# Large data files - excluded from git
+*.parquet
+data/*.csv
+data/*.json
 
-# MetaTrader compiled files (optional - these can be regenerated)
-# Experts/*.ex5
+# Keep folder structures
+!**/.gitkeep
