@@ -27,7 +27,7 @@
 
 | Component | Version | Status | Location |
 |-----------|---------|--------|----------|
-| TimeCutoffManager | 2.2.0 | **PENDING TEST** | `Experts/TimeCutoffManager.mq5` |
+| TimeCutoffManager | 2.2.0 | **LIVE - Partial close verified** | `Experts/TimeCutoffManager.mq5` |
 | GU Manager | 1.0.0 | Stable | `Experts/GUM/GUManager.mq5` |
 
 **Header Convention for WIP:**
@@ -49,7 +49,7 @@
 
 ### TCM v2.2.0 Core Testing
 - [ ] Compile TCM v2.2 on Windows (MetaEditor)
-- [ ] Test partial close with 0.03 lot position → expect 0.02/0.01 split
+- [x] Test partial close with 0.03 lot position → expect 0.02/0.01 split
 - [ ] Test partial close with 0.10 lot position → expect 0.05/0.05 split
 - [ ] Verify 0.02 closes at 1min, 0.01 at 2min (timing accuracy)
 - [ ] Test `UsePartialClose=false` (single close mode at 2min)
@@ -82,7 +82,7 @@
 
 | Feature | Target Version | Status | Priority | Notes |
 |---------|---------------|--------|----------|-------|
-| **Breakeven Protection** | 2.3.0 | [IMPL] | HIGH | Move SL to entry after partial close in profit — RFC 001 approved |
+| **Breakeven Protection** | 2.3.0 | [TEST] | HIGH | Move SL to entry after partial close in profit — Coded, awaiting Windows testing |
 | **News Blackout** | 2.3.0 or 2.4.0 | [RFC] | HIGH | Pause closes during NFP/FOMC (5 min before/after) |
 | **Dynamic Spread Filter** | 2.3.0 or 2.4.0 | [RFC] | MEDIUM | Session-based spread thresholds |
 | **Daily Loss Circuit Breaker** | 2.4.0 | [RFC] | MEDIUM | Stop monitoring if daily loss > threshold |

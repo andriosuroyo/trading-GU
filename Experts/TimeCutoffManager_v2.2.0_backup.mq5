@@ -1,31 +1,28 @@
 //+------------------------------------------------------------------+
 //|                                       TimeCutoffManager.mq5       |
 //|                        Time-Based Position Cutoff Manager         |
-//|                        VERSION 2.3.0 - WORK IN PROGRESS           |
-//|                        DO NOT DEPLOY - TESTING PHASE              |
+//|                        VERSION 2.2 - PARTIAL CLOSE                |
 //|                                                                   |
-//|  FEATURES v2.3.0:                                                 |
-//|  - Automatic session detection (GMT-based, DST-aware)             |
-//|  - Per-session timing profiles (Asia/London/NY independent)       |
-//|  - True breakeven protection (commission + spread accounted)      |
-//|  - Commission auto-detection with $4.00 fallback                  |
-//|  - Breakeven audit trail CSV logging                              |
+//|  FIXES v2.1:                                                      |
+//|  - Removed Sleep() anti-pattern, replaced with state machine      |
+//|  - Added atomic position validation (race condition fix)          |
+//|  - Added SymbolSelect() for multi-symbol monitoring               |
+//|  - Added connection state validation                              |
+//|  - Added retry logic with exponential backoff                     |
+//|  - Fixed hardcoded error codes to use TRADE_RETCODE constants     |
+//|  - Added FILE_COMMON mutex for multi-instance safety              |
+//|  - Optimized dashboard (update, don't recreate)                   |
+//|  - Added periodic position array cleanup                          |
+//|  - Added spread filter for close validation                       |
 //|                                                                   |
-//|  FIXES v2.2:                                                      |
+//|  FEATURES v2.2:                                                   |
 //|  - Two-stage close: Partial close at MidDuration, full at End     |
 //|  - Configurable partial close percentage                          |
 //|  - Independent timing for partial and final close                 |
-//|  - State machine replaces Sleep() anti-pattern                    |
-//|  - Atomic position validation (race condition fix)                |
-//|  - SymbolSelect() for multi-symbol monitoring                     |
-//|  - Connection state validation                                    |
-//|  - Retry logic with exponential backoff                           |
-//|  - FILE_COMMON mutex for multi-instance safety                    |
-//|  - Spread filter for close validation                             |
 //+------------------------------------------------------------------+
 #property copyright "GU Trading"
 #property link      ""
-#property version   "2.30"
+#property version   "2.20"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -55,23 +52,12 @@ enum ENUM_CLOSE_STATE
    CLOSE_STATE_RETRY          // Close failed, scheduling retry
 };
 
-//--- v2.3.0: Session Type Enumeration
-enum ENUM_SESSION_TYPE
-{
-   SESSION_ASIA,              // 02:00-07:59 GMT
-   SESSION_LONDON,            // 08:00-12:59 GMT (includes Asia-London overlap)
-   SESSION_LONDON_NY,         // 13:00-16:59 GMT (treated as NY)
-   SESSION_NY,                // 17:00-21:59 GMT
-   SESSION_NY_ASIA,           // 22:00-01:59 GMT (overnight)
-   SESSION_UNKNOWN
-};
-
 //--- Input Parameters
 input group "=== Position Filter Method ==="
 input ENUM_FILTER_METHOD InpFilterMethod = FILTER_BY_MAGIC_NUMBER;  // Filter Method
 input string InpFilterValue = "11,12,13";                           // Filter Value (see description below)
 
-input group "=== Legacy Cutoff Settings (used if Session Timing disabled) ==="
+input group "=== Cutoff Settings ==="
 input ENUM_DURATION_TYPE InpDurationType = DURATION_MINUTES;  // Duration Type
 input int    InpCloseDuration = 2;                            // Final Close Duration (e.g., 2 = close all at 2 minutes)
 input bool   InpUsePartialClose = true;                       // Enable Partial Close (true=2-stage, false=single close)
@@ -81,28 +67,6 @@ input int    InpWarningSeconds = 10;                          // Warning Before 
 input bool   InpUseTrailing = false;                          // Use Trailing Stop After Cutoff
 input double InpTrailDistance = 0;                            // Trail Distance (points, 0 = disabled)
 input int    InpMaxSpreadPoints = 500;                        // Max Spread to Allow Close (points, 0=disable)
-
-input group "=== Session-Based Timing (v2.3.0) ==="
-input bool   InpUseSessionTiming = true;     // Enable per-session profiles
-input bool   InpAutoDetectDST = true;        // Dynamic GMT offset (recommended)
-
-input group "=== Asia Session (02-08 GMT) ==="
-input int    InpAsiaPartialMins = 2;        // Partial close at X minutes
-input int    InpAsiaFinalMins = 5;          // Final close at X minutes
-input double InpAsiaPartialPct = 50;        // Partial close %
-input bool   InpAsiaUseBreakeven = true;    // Enable breakeven at partial close
-
-input group "=== London Session (08-13 GMT) ==="
-input int    InpLondonPartialMins = 2;      // Partial close at X minutes
-input int    InpLondonFinalMins = 5;        // Final close at X minutes
-input double InpLondonPartialPct = 50;      // Partial close %
-input bool   InpLondonUseBreakeven = true;  // Enable breakeven at partial close
-
-input group "=== NY Session (13-22 GMT) ==="
-input int    InpNYPartialMins = 2;          // Partial close at X minutes
-input int    InpNYFinalMins = 5;            // Final close at X minutes
-input double InpNYPartialPct = 50;          // Partial close %
-input bool   InpNYUseBreakeven = true;      // Enable breakeven at partial close
 
 input group "=== Retry Settings ==="
 input int    InpMaxCloseRetries = 3;                          // Max Close Attempts
@@ -118,19 +82,16 @@ input color  InpColorWarning = clrYellow;        // Warning Color
 input color  InpColorCritical = clrRed;          // Critical Color
 input color  InpColorProfit = clrLime;           // Profit Color
 input color  InpColorLoss = clrSalmon;           // Loss Color
-input color  InpColorBreakeven = clrAqua;        // Breakeven Applied Color
 
 input group "=== Recovery Tracking ==="
 input bool   InpTrackLosses = true;              // Enable Loss Tracking
 input string InpRecoveryFile = "loss_recovery.csv"; // Recovery Data File
 input double InpRecoveryMultiplier = 1.5;        // Recovery Lot Multiplier
-input string InpBreakevenLogFile = "tcm_breakeven_log.csv"; // Breakeven Audit Trail
 
 //--- Global Constants
 #define TCM_FILE_MUTEX_TIMEOUT_MS 5000    // 5 second timeout for file mutex
 #define TCM_ARRAY_CLEANUP_INTERVAL 300    // Cleanup closed positions every 5 minutes
 #define TCM_CONNECTION_CHECK_INTERVAL 10  // Check connection every 10 seconds
-#define TCM_FALLBACK_COMMISSION 4.00      // $4/lot round-trip fallback
 
 //--- Global Variables
 CTrade      Trade;
@@ -146,9 +107,9 @@ struct PositionData {
     double  openPrice;
     double  lots;                 // Current lots (updated after partial close)
     double  initialLots;          // Original lots opened
-    int     type;                 // ORDER_TYPE_BUY or ORDER_TYPE_SELL
+    int     type;              // ORDER_TYPE_BUY or ORDER_TYPE_SELL
     double  currentPnL;
-    double  maxPnL;               // For trailing
+    double  maxPnL;            // For trailing
     bool    warningIssued;
     bool    closed;
     bool    inTrailingMode;       // True after final cutoff if trailing enabled
@@ -159,12 +120,6 @@ struct PositionData {
     datetime lastCloseAttempt;
     int      closeRetryCount;
     ulong    pendingCloseTicket;
-    //--- v2.3.0: Session and breakeven tracking
-    ENUM_SESSION_TYPE session;        // Detected session at open
-    double            commissionPaid; // Commission per lot for this position
-    double            entrySpread;    // Spread at position open (points)
-    bool              breakevenApplied; // True if breakeven SL set
-    datetime          breakevenTime;  // When breakeven was applied
 };
 
 PositionData g_positions[];
@@ -187,9 +142,6 @@ datetime g_lastCleanup = 0;
 datetime g_lastConnectionCheck = 0;
 bool g_terminalConnected = false;
 bool g_tradeAllowed = false;
-
-// v2.3.0: Detected commission
- double g_detectedCommissionPerLot = 0;
 
 // Filter value arrays (parsed from input)
 long     g_magicNumbers[];
@@ -227,9 +179,6 @@ int OnInit()
     //--- Initialize symbol selection for multi-symbol monitoring
     InitializeSymbolSelection();
     
-    //--- v2.3.0: Detect commission
-    InitializeCommissionDetection();
-    
     //--- Create dashboard
     CreateDashboard();
     
@@ -251,32 +200,18 @@ int OnInit()
     g_lastConnectionCheck = TimeCurrent();
     
     //--- Print configuration summary
-    Print("=== TimeCutoffManager v2.3.0 INITIALIZED ===");
+    Print("=== TimeCutoffManager v2.1 INITIALIZED ===");
     Print("Filter Method: ", EnumToString(InpFilterMethod));
     Print("Filter Value: ", InpFilterValue);
-    
-    if(InpUseSessionTiming)
-    {
-        Print("Session Timing: ENABLED");
-        Print("  Asia: ", InpAsiaPartialMins, "min partial / ", InpAsiaFinalMins, "min final");
-        Print("  London: ", InpLondonPartialMins, "min partial / ", InpLondonFinalMins, "min final");
-        Print("  NY: ", InpNYPartialMins, "min partial / ", InpNYFinalMins, "min final");
-    }
+    Print("Close Duration: ", InpCloseDuration, " ", EnumToString(InpDurationType));
+    if(InpUsePartialClose && InpPartialCloseDuration > 0 && InpPartialClosePct > 0)
+        Print("Partial Close: ", InpPartialCloseDuration, " ", EnumToString(InpDurationType), 
+              " (", DoubleToString(InpPartialClosePct, 0), "%)");
     else
-    {
-        Print("Legacy Timing: ", InpCloseDuration, " ", EnumToString(InpDurationType));
-        if(InpUsePartialClose && InpPartialCloseDuration > 0 && InpPartialClosePct > 0)
-            Print("Partial Close: ", InpPartialCloseDuration, " ", EnumToString(InpDurationType), 
-                  " (", DoubleToString(InpPartialClosePct, 0), "%)");
-        else
-            Print("Partial Close: DISABLED");
-    }
-    
-    Print("Commission detected: $", DoubleToString(g_detectedCommissionPerLot, 2), "/lot");
+        Print("Partial Close: DISABLED");
     Print("Warning before close: ", InpWarningSeconds, " seconds");
     Print("Max close retries: ", InpMaxCloseRetries);
     Print("Max spread for close: ", InpMaxSpreadPoints, " points");
-    Print("Breakeven log: ", InpBreakevenLogFile);
     Print("==========================================");
     
     return(INIT_SUCCEEDED);
@@ -322,96 +257,6 @@ bool ValidateTerminalState()
     
     Print("Terminal state validated: Connected, Trade Allowed");
     return true;
-}
-
-//+------------------------------------------------------------------+
-//| v2.3.0: Initialize Commission Detection                          |
-//+------------------------------------------------------------------+
-void InitializeCommissionDetection()
-{
-    g_detectedCommissionPerLot = 0;
-    
-    // Try SymbolInfo first
-    g_detectedCommissionPerLot = DetectCommissionFromSymbolInfo();
-    
-    if(g_detectedCommissionPerLot <= 0)
-    {
-        // Try history analysis
-        g_detectedCommissionPerLot = DetectCommissionFromHistory();
-    }
-    
-    if(g_detectedCommissionPerLot <= 0)
-    {
-        // Fallback to hardcoded value
-        g_detectedCommissionPerLot = TCM_FALLBACK_COMMISSION;
-        Print("WARNING: Commission auto-detection failed. Using fallback $", 
-              TCM_FALLBACK_COMMISSION, "/lot");
-    }
-    else
-    {
-        Print("Commission auto-detected: $", DoubleToString(g_detectedCommissionPerLot, 2), "/lot round-trip");
-    }
-}
-
-//+------------------------------------------------------------------+
-//| v2.3.0: Detect Commission from SymbolInfo                        |
-//+------------------------------------------------------------------+
-double DetectCommissionFromSymbolInfo()
-{
-    double commission = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_COMMISSION);
-    
-    if(commission > 0)
-    {
-        // SYMBOL_TRADE_COMMISSION is per-side, double for round-trip
-        return NormalizeDouble(commission * 2, 2);
-    }
-    
-    return 0;
-}
-
-//+------------------------------------------------------------------+
-//| v2.3.0: Detect Commission from Recent History                    |
-//+------------------------------------------------------------------+
-double DetectCommissionFromHistory()
-{
-    datetime from = TimeCurrent() - PeriodSeconds(PERIOD_D1) * 30; // Last 30 days
-    HistorySelect(from, TimeCurrent());
-    
-    double totalCommission = 0;
-    double totalLots = 0;
-    int samples = 0;
-    
-    for(int i = HistoryDealsTotal() - 1; i >= 0 && samples < 10; i--)
-    {
-        ulong ticket = HistoryDealGetTicket(i);
-        if(ticket == 0) continue;
-        
-        string symbol = HistoryDealGetString(ticket, DEAL_SYMBOL);
-        if(symbol != _Symbol) continue;
-        
-        // Only count entry deals
-        ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(ticket, DEAL_ENTRY);
-        if(entry != DEAL_ENTRY_IN) continue;
-        
-        double lots = HistoryDealGetDouble(ticket, DEAL_VOLUME);
-        double commission = HistoryDealGetDouble(ticket, DEAL_COMMISSION);
-        
-        if(lots > 0 && commission != 0)
-        {
-            totalCommission += MathAbs(commission);
-            totalLots += lots;
-            samples++;
-        }
-    }
-    
-    if(totalLots >= 0.1)
-    {
-        double perLot = totalCommission / totalLots;
-        // History commission is per-side, double for round-trip
-        return NormalizeDouble(perLot * 2, 2);
-    }
-    
-    return 0;
 }
 
 //+------------------------------------------------------------------+
@@ -593,102 +438,6 @@ void ParseFilterValues()
     }
 }
 
-
-//+------------------------------------------------------------------+
-//| v2.3.0: Convert Server Time to GMT (Foolproof DST handling)      |
-//+------------------------------------------------------------------+
-datetime ServerTimeToGMT(datetime serverTime)
-{
-    // Calculate current offset between server time and GMT
-    // This auto-adjusts for DST because TimeCurrent() shifts with DST,
-    // but TimeGMT() never shifts
-    datetime currentServer = TimeCurrent();
-    datetime currentGMT = TimeGMT();
-    long offsetSeconds = currentServer - currentGMT;
-    
-    return serverTime - offsetSeconds;
-}
-
-//+------------------------------------------------------------------+
-//| v2.3.0: Determine Session Type from Position Open Time           |
-//+------------------------------------------------------------------+
-ENUM_SESSION_TYPE GetSessionForPosition(datetime positionOpenTime)
-{
-    datetime gmtTime = ServerTimeToGMT(positionOpenTime);
-    
-    MqlDateTime dt;
-    TimeToStruct(gmtTime, dt);
-    
-    int hour = dt.hour;
-    
-    // Session definitions in GMT (matching GU setfile hours)
-    if(hour >= 2 && hour < 8)  return SESSION_ASIA;
-    if(hour >= 8 && hour < 13) return SESSION_LONDON;
-    if(hour >= 13 && hour < 17) return SESSION_LONDON_NY;
-    if(hour >= 17 && hour < 22) return SESSION_NY;
-    
-    return SESSION_NY_ASIA;
-}
-
-//+------------------------------------------------------------------+
-//| v2.3.0: Get Timing Parameters for Session                        |
-//+------------------------------------------------------------------+
-void GetTimingForSession(ENUM_SESSION_TYPE session,
-                         int &partialMins,
-                         int &finalMins,
-                         double &partialPct,
-                         bool &useBreakeven)
-{
-    if(!InpUseSessionTiming)
-    {
-        // Fallback to legacy global inputs
-        partialMins = InpPartialCloseDuration;
-        finalMins = InpCloseDuration;
-        partialPct = InpPartialClosePct;
-        useBreakeven = false; // Breakeven requires session mode
-        return;
-    }
-    
-    switch(session)
-    {
-        case SESSION_ASIA:
-            partialMins = InpAsiaPartialMins;
-            finalMins = InpAsiaFinalMins;
-            partialPct = InpAsiaPartialPct;
-            useBreakeven = InpAsiaUseBreakeven;
-            break;
-            
-        case SESSION_LONDON:
-            partialMins = InpLondonPartialMins;
-            finalMins = InpLondonFinalMins;
-            partialPct = InpLondonPartialPct;
-            useBreakeven = InpLondonUseBreakeven;
-            break;
-            
-        case SESSION_LONDON_NY:
-        case SESSION_NY:
-            partialMins = InpNYPartialMins;
-            finalMins = InpNYFinalMins;
-            partialPct = InpNYPartialPct;
-            useBreakeven = InpNYUseBreakeven;
-            break;
-            
-        case SESSION_NY_ASIA:
-            // Overnight - use most conservative (Asia) settings
-            partialMins = InpAsiaPartialMins;
-            finalMins = InpAsiaFinalMins;
-            partialPct = InpAsiaPartialPct;
-            useBreakeven = InpAsiaUseBreakeven;
-            break;
-            
-        default:
-            partialMins = InpPartialCloseDuration;
-            finalMins = InpCloseDuration;
-            partialPct = InpPartialClosePct;
-            useBreakeven = false;
-    }
-}
-
 //+------------------------------------------------------------------+
 //| Convert duration to seconds                                      |
 //+------------------------------------------------------------------+
@@ -699,24 +448,24 @@ int GetCloseDurationInSeconds()
         case DURATION_SECONDS: return InpCloseDuration;
         case DURATION_MINUTES: return InpCloseDuration * 60;
         case DURATION_HOURS:   return InpCloseDuration * 3600;
-        default:               return InpCloseDuration * 60;
+        default:               return InpCloseDuration * 60; // Default to minutes
     }
 }
 
 //+------------------------------------------------------------------+
-//| Convert partial duration to seconds (session-aware)              |
+//| Convert partial duration to seconds (0 if disabled)              |
 //+------------------------------------------------------------------+
-int GetPartialCloseDurationInSeconds(int partialMins)
+int GetPartialCloseDurationInSeconds()
 {
     if(!InpUsePartialClose) return 0;
-    if(partialMins <= 0) return 0;
+    if(InpPartialCloseDuration <= 0 || InpPartialClosePct <= 0) return 0;
     
     switch(InpDurationType)
     {
-        case DURATION_SECONDS: return partialMins;
-        case DURATION_MINUTES: return partialMins * 60;
-        case DURATION_HOURS:   return partialMins * 3600;
-        default:               return partialMins * 60;
+        case DURATION_SECONDS: return InpPartialCloseDuration;
+        case DURATION_MINUTES: return InpPartialCloseDuration * 60;
+        case DURATION_HOURS:   return InpPartialCloseDuration * 3600;
+        default:               return InpPartialCloseDuration * 60;
     }
 }
 
@@ -851,7 +600,6 @@ void ProcessPendingCloses()
     }
 }
 
-
 //+------------------------------------------------------------------+
 //| Cleanup Dashboard Objects                                        |
 //+------------------------------------------------------------------+
@@ -871,36 +619,31 @@ void CreateDashboard()
     int y = InpDashboardY;
     
     // Main background
-    CreateRectangle("TCM_Background", x - 5, y - 5, 650, 420, InpBackgroundColor);
+    CreateRectangle("TCM_Background", x - 5, y - 5, 620, 400, InpBackgroundColor);
     
     // Header background
-    CreateRectangle("TCM_HeaderBg", x, y, 640, 25, C'20,20,20');
+    CreateRectangle("TCM_HeaderBg", x, y, 610, 25, C'20,20,20');
     
     // Title
-    CreateLabel("TCM_Title", "TIME CUTOFF MANAGER v2.3.0", x + 10, y + 5, clrGold, 10, true);
+    CreateLabel("TCM_Title", "TIME CUTOFF MANAGER v2.2", x + 10, y + 5, clrGold, 10, true);
     y += 30;
     
     // Connection status
-    CreateLabel("TCM_Connection", "●", x + 610, y - 25, clrLime, 12, true);
+    CreateLabel("TCM_Connection", "●", x + 580, y - 25, clrLime, 12, true);
     
     // Column headers
     CreateLabel("TCM_H_Ticket", "Ticket", x + 10, y, clrGray, 8);
     CreateLabel("TCM_H_Symbol", "Symbol", x + 70, y, clrGray, 8);
-    CreateLabel("TCM_H_Session", "Session", x + 130, y, clrGray, 8);
-    CreateLabel("TCM_H_Type", "Type", x + 190, y, clrGray, 8);
-    CreateLabel("TCM_H_Lots", "Lots", x + 240, y, clrGray, 8);
-    CreateLabel("TCM_H_PnL", "P&L", x + 300, y, clrGray, 8);
-    CreateLabel("TCM_H_Timer", "Countdown", x + 380, y, clrGray, 8);
-    CreateLabel("TCM_H_Status", "Status", x + 480, y, clrGray, 8);
+    CreateLabel("TCM_H_Type", "Type", x + 130, y, clrGray, 8);
+    CreateLabel("TCM_H_Lots", "Lots", x + 180, y, clrGray, 8);
+    CreateLabel("TCM_H_PnL", "P&L", x + 230, y, clrGray, 8);
+    CreateLabel("TCM_H_Timer", "Countdown", x + 310, y, clrGray, 8);
+    CreateLabel("TCM_H_Status", "Status", x + 420, y, clrGray, 8);
     
     // Recovery info header
     y += InpRowHeight + 10;
     CreateLabel("TCM_RecoveryLabel", "Recovery Loss: $", x + 10, y, clrSalmon, 9);
     CreateLabel("TCM_RecoveryValue", "0.00", x + 110, y, clrSalmon, 9, true);
-    
-    // Commission info
-    CreateLabel("TCM_CommLabel", "Comm: $", x + 200, y, clrGray, 9);
-    CreateLabel("TCM_CommValue", "0.00", x + 260, y, clrGray, 9);
     
     // Status bar
     y += InpRowHeight + 5;
@@ -922,6 +665,7 @@ void UpdateDashboard()
     UpdateLabelColor("TCM_Connection", connColor);
     
     //--- Clean up objects for positions that no longer exist
+    // (only if count changed, to minimize GDI operations)
     static int lastDisplayedCount = -1;
     int activeCount = 0;
     for(int i = 0; i < g_positionCount; i++)
@@ -944,10 +688,6 @@ void UpdateDashboard()
     //--- Update recovery display
     string recoveryText = DoubleToString(g_totalUnrecoveredLoss, 2);
     UpdateLabel("TCM_RecoveryValue", recoveryText);
-    
-    //--- Update commission display
-    string commText = DoubleToString(g_detectedCommissionPerLot, 2) + "/lot";
-    UpdateLabel("TCM_CommValue", commText);
     
     //--- Display positions
     int displayIdx = 0;
@@ -978,12 +718,9 @@ void UpdateDashboard()
         // Trailing mode color
         if(g_positions[i].inTrailingMode)
             textColor = clrAqua;
-        // Partial close done color
+        // Partial close done color (light blue - waiting for final)
         if(g_positions[i].partialCloseDone && !g_positions[i].closed)
             textColor = clrDodgerBlue;
-        // Breakeven applied color
-        if(g_positions[i].breakevenApplied)
-            textColor = InpColorBreakeven;
         // Pending close color
         if(g_positions[i].closeState == CLOSE_STATE_PENDING)
             textColor = clrOrange;
@@ -1033,26 +770,13 @@ void UpdateDashboard()
             timerText = StringFormat("%ds", secondsRemaining);
         }
         
-        // Session string
-        string sessionStr;
-        switch(g_positions[i].session)
-        {
-            case SESSION_ASIA:      sessionStr = "ASIA"; break;
-            case SESSION_LONDON:    sessionStr = "LONDON"; break;
-            case SESSION_LONDON_NY: sessionStr = "L-NY"; break;
-            case SESSION_NY:        sessionStr = "NY"; break;
-            case SESSION_NY_ASIA:   sessionStr = "OVNITE"; break;
-            default:                sessionStr = "???"; break;
-        }
-        
-        // Create/update row
+        // Create/update row (use CreateOrUpdateLabel for efficiency)
         CreateOrUpdateLabel(prefix + "Ticket", IntegerToString(g_positions[i].ticket), x + 10, y, textColor, 8);
         CreateOrUpdateLabel(prefix + "Symbol", g_positions[i].symbol, x + 70, y, textColor, 8);
-        CreateOrUpdateLabel(prefix + "Session", sessionStr, x + 130, y, textColor, 8);
-        CreateOrUpdateLabel(prefix + "Type", g_positions[i].type == ORDER_TYPE_BUY ? "BUY" : "SELL", x + 190, y, textColor, 8);
-        CreateOrUpdateLabel(prefix + "Lots", DoubleToString(g_positions[i].lots, 2) + (g_positions[i].partialCloseDone ? "*" : ""), x + 240, y, textColor, 8);
-        CreateOrUpdateLabel(prefix + "PnL", StringFormat("$%.2f", g_positions[i].currentPnL), x + 300, y, pnlColor, 8);
-        CreateOrUpdateLabel(prefix + "Timer", timerText, x + 380, y, textColor, 10, true);
+        CreateOrUpdateLabel(prefix + "Type", g_positions[i].type == ORDER_TYPE_BUY ? "BUY" : "SELL", x + 130, y, textColor, 8);
+        CreateOrUpdateLabel(prefix + "Lots", DoubleToString(g_positions[i].lots, 2) + (g_positions[i].partialCloseDone ? "*" : ""), x + 180, y, textColor, 8);
+        CreateOrUpdateLabel(prefix + "PnL", StringFormat("$%.2f", g_positions[i].currentPnL), x + 230, y, pnlColor, 8);
+        CreateOrUpdateLabel(prefix + "Timer", timerText, x + 310, y, textColor, 10, true);
         
         string status;
         if(g_positions[i].inTrailingMode)
@@ -1061,17 +785,13 @@ void UpdateDashboard()
             status = "CLOSING";
         else if(g_positions[i].closeState == CLOSE_STATE_RETRY)
             status = "RETRY";
-        else if(g_positions[i].breakevenApplied && !g_positions[i].partialCloseDone)
-            status = "BE-READY";
-        else if(g_positions[i].breakevenApplied && g_positions[i].partialCloseDone)
-            status = "BE-SET";
         else if(g_positions[i].partialCloseDone && secondsRemaining > 0)
-            status = "P-CLOSED";
+            status = "P-CLOSED";  // Partial close done, waiting for final
         else if(secondsRemaining == 0)
             status = "DUE";
         else
             status = "ACTIVE";
-        CreateOrUpdateLabel(prefix + "Status", status, x + 480, y, textColor, 8);
+        CreateOrUpdateLabel(prefix + "Status", status, x + 420, y, textColor, 8);
         
         y += InpRowHeight;
         displayIdx++;
@@ -1084,6 +804,7 @@ void UpdateDashboard()
     }
     else
     {
+        // Remove empty message if exists
         if(ObjectFind(0, "TCM_P_Empty") >= 0)
             ObjectDelete(0, "TCM_P_Empty");
     }
@@ -1091,11 +812,9 @@ void UpdateDashboard()
     // Update status bar
     string statusText = "Conn: " + (g_terminalConnected ? "OK" : "DOWN") + 
                         " | Trade: " + (g_tradeAllowed ? "OK" : "BLOCKED") +
-                        " | Tracked: " + IntegerToString(activeCount) +
-                        " | SessionMode: " + (InpUseSessionTiming ? "ON" : "OFF");
+                        " | Tracked: " + IntegerToString(activeCount);
     UpdateLabel("TCM_StatusBar", statusText);
 }
-
 
 //+------------------------------------------------------------------+
 //| Scan for Positions with Atomic Validation                        |
@@ -1109,8 +828,12 @@ void ScanPositions()
         if(ticket == 0) continue;
         
         //--- CRITICAL: Re-select by ticket to ensure atomicity
+        // PositionGetTicket(i) selects position i, but the pool may have shifted
+        // between our last operation and now. Re-selecting by ticket ensures
+        // we're reading properties from the correct position.
         if(!PositionSelectByTicket(ticket))
         {
+            // Position closed between enumeration and selection
             continue;
         }
         
@@ -1159,11 +882,12 @@ void ScanPositions()
 }
 
 //+------------------------------------------------------------------+
-//| Add Position to Tracking (v2.3.0 Enhanced)                       |
+//| Add Position to Tracking                                         |
 //+------------------------------------------------------------------+
 void AddPosition(ulong ticket)
 {
     //--- CRITICAL: Position must be selected before calling this
+    // Verify the ticket matches the selected position
     ulong selectedTicket = PositionGetInteger(POSITION_TICKET);
     if(selectedTicket != ticket)
     {
@@ -1195,48 +919,19 @@ void AddPosition(ulong ticket)
     g_positions[idx].closeRetryCount = 0;
     g_positions[idx].pendingCloseTicket = 0;
     
-    //--- v2.3.0: Session detection and commission
-    g_positions[idx].session = GetSessionForPosition(g_positions[idx].openTime);
-    g_positions[idx].commissionPaid = g_detectedCommissionPerLot;
-    g_positions[idx].entrySpread = (double)SymbolInfoInteger(g_positions[idx].symbol, SYMBOL_SPREAD);
-    g_positions[idx].breakevenApplied = false;
-    g_positions[idx].breakevenTime = 0;
-    
-    //--- Get session-specific timing
-    int partialMins, finalMins;
-    double partialPct;
-    bool useBreakeven;
-    GetTimingForSession(g_positions[idx].session, partialMins, finalMins, partialPct, useBreakeven);
-    
-    //--- Set cutoff times using session-specific values
-    int closeDurationSeconds;
-    int partialDurationSeconds;
-    
-    if(InpUseSessionTiming)
-    {
-        // Use session-specific values (always minutes in session mode)
-        closeDurationSeconds = finalMins * 60;
-        partialDurationSeconds = (partialMins > 0 && partialPct > 0) ? partialMins * 60 : 0;
-    }
-    else
-    {
-        // Legacy mode
-        closeDurationSeconds = GetCloseDurationInSeconds();
-        partialDurationSeconds = GetPartialCloseDurationInSeconds(InpPartialCloseDuration);
-        partialPct = InpPartialClosePct;
-    }
+    // Set cutoff times
+    int closeDurationSeconds = GetCloseDurationInSeconds();
+    int partialDurationSeconds = GetPartialCloseDurationInSeconds();
     
     g_positions[idx].cutoffTime = g_positions[idx].openTime + closeDurationSeconds;
     
     if(partialDurationSeconds > 0 && partialDurationSeconds < closeDurationSeconds)
     {
         g_positions[idx].partialCutoffTime = g_positions[idx].openTime + partialDurationSeconds;
-        g_positions[idx].partialCloseLots = NormalizeDouble(g_positions[idx].initialLots * partialPct / 100.0, 2);
-        
+        g_positions[idx].partialCloseLots = NormalizeDouble(g_positions[idx].initialLots * InpPartialClosePct / 100.0, 2);
         // Ensure at least minimum lot size and not more than total
         double minLot = SymbolInfoDouble(g_positions[idx].symbol, SYMBOL_VOLUME_MIN);
-        double maxLot = g_positions[idx].initialLots - minLot;
-        
+        double maxLot = g_positions[idx].initialLots - minLot; // Leave at least minLot for remainder
         if(g_positions[idx].partialCloseLots > maxLot)
             g_positions[idx].partialCloseLots = maxLot;
         if(g_positions[idx].partialCloseLots < minLot)
@@ -1244,51 +939,38 @@ void AddPosition(ulong ticket)
     }
     else
     {
-        g_positions[idx].partialCutoffTime = 0;
+        g_positions[idx].partialCutoffTime = 0; // Disabled
         g_positions[idx].partialCloseLots = 0;
     }
     
     g_positionCount++;
     
-    // Session name for logging
-    string sessionName;
-    switch(g_positions[idx].session)
-    {
-        case SESSION_ASIA:      sessionName = "ASIA"; break;
-        case SESSION_LONDON:    sessionName = "LONDON"; break;
-        case SESSION_LONDON_NY: sessionName = "LONDON-NY"; break;
-        case SESSION_NY:        sessionName = "NY"; break;
-        case SESSION_NY_ASIA:   sessionName = "NY-ASIA (overnight)"; break;
-        default:                sessionName = "UNKNOWN"; break;
-    }
-    
     Print("Added position #", ticket, " ", g_positions[idx].symbol, 
-          " [Session: ", sessionName, "]",
           " Final Cutoff: ", TimeToString(g_positions[idx].cutoffTime, TIME_SECONDS),
-          " (", InpUseSessionTiming ? finalMins : InpCloseDuration, " min)",
+          " (", InpCloseDuration, " ", EnumToString(InpDurationType), ")",
           g_positions[idx].partialCutoffTime > 0 ? 
               ", Partial: " + TimeToString(g_positions[idx].partialCutoffTime, TIME_SECONDS) + 
-              " (" + DoubleToString(partialPct, 0) + "%)" : 
-              "",
-          useBreakeven ? " +BE" : "");
+              " (" + DoubleToString(InpPartialClosePct, 0) + "%)" : 
+              "");
 }
 
 //+------------------------------------------------------------------+
-//| Check Cutoff Times (Partial + Full Close + Breakeven)            |
+//| Check Cutoff Times (Partial + Full Close)                        |
 //+------------------------------------------------------------------+
 void CheckCutoffs()
 {
     for(int i = 0; i < g_positionCount; i++)
     {
         if(g_positions[i].closed) continue;
-        if(g_positions[i].closeState == CLOSE_STATE_PENDING) continue;
+        if(g_positions[i].closeState == CLOSE_STATE_PENDING) continue; // Already closing
         if(g_positions[i].closeState == CLOSE_STATE_RETRY) 
         {
+            // Retry logic handled in ProcessPendingCloses
             if(g_positions[i].closeRetryCount >= InpMaxCloseRetries)
             {
                 Print("ERROR: Max retries exceeded for position #", g_positions[i].ticket, 
                       ". Manual intervention required.");
-                g_positions[i].closed = true;
+                g_positions[i].closed = true; // Stop trying
                 continue;
             }
             continue;
@@ -1301,43 +983,26 @@ void CheckCutoffs()
         {
             int secondsToPartial = (int)(g_positions[i].partialCutoffTime - now);
             
-            // Warning before partial close
+            // Warning before partial close (use half of warning time)
             if(!g_positions[i].warningIssued && secondsToPartial <= InpWarningSeconds/2 && secondsToPartial > 0)
             {
                 g_positions[i].warningIssued = true;
-                Print("WARNING: Position #", g_positions[i].ticket, " partial close in ", 
-                      secondsToPartial, " seconds");
+                Print("WARNING: Position #", g_positions[i].ticket, " partial close (", 
+                      DoubleToString(InpPartialClosePct, 0), "%) in ", secondsToPartial, " seconds");
             }
             
             // Execute partial close
             if(now >= g_positions[i].partialCutoffTime)
             {
-                // v2.3.0: Apply breakeven FIRST (before partial close)
-                if(InpUseSessionTiming && !g_positions[i].breakevenApplied)
-                {
-                    int partialMins, finalMins;
-                    double partialPct;
-                    bool useBreakeven;
-                    GetTimingForSession(g_positions[i].session, partialMins, finalMins, partialPct, useBreakeven);
-                    
-                    if(useBreakeven)
-                    {
-                        ApplyBreakeven(i);
-                        // Continue to partial close regardless of breakeven result
-                    }
-                }
-                
-                // Check spread filter
                 if(!IsSpreadAcceptable(g_positions[i].symbol))
                 {
                     Print("Delaying partial close for #", g_positions[i].ticket, 
-                          " - spread too high (", GetCurrentSpread(g_positions[i].symbol), 
-                          " > ", InpMaxSpreadPoints, ")");
+                          " - spread too high (", GetCurrentSpread(g_positions[i].symbol), " > ", InpMaxSpreadPoints, ")");
                 }
                 else
                 {
                     PartialClosePosition(i);
-                    continue;
+                    continue; // Skip final close check this iteration
                 }
             }
         }
@@ -1345,42 +1010,42 @@ void CheckCutoffs()
         //--- FINAL CLOSE CHECK (Stage 2)
         int secondsRemaining = (int)(g_positions[i].cutoffTime - now);
         
-        // Warning before final close
+        // Warning before final close (only if partial close already done or disabled)
         if(g_positions[i].partialCloseDone && !g_positions[i].warningIssued && 
            secondsRemaining <= InpWarningSeconds && secondsRemaining > 0)
         {
             g_positions[i].warningIssued = true;
-            Print("WARNING: Position #", g_positions[i].ticket, " final close in ", 
-                  secondsRemaining, " seconds");
+            Print("WARNING: Position #", g_positions[i].ticket, " final close in ", secondsRemaining, " seconds");
         }
         else if(!g_positions[i].partialCloseDone && g_positions[i].partialCutoffTime == 0 && 
                 !g_positions[i].warningIssued && secondsRemaining <= InpWarningSeconds && secondsRemaining > 0)
         {
+            // No partial close configured, warn on final close
             g_positions[i].warningIssued = true;
-            Print("WARNING: Position #", g_positions[i].ticket, " closing in ", 
-                  secondsRemaining, " seconds");
+            Print("WARNING: Position #", g_positions[i].ticket, " closing in ", secondsRemaining, " seconds");
         }
         
         // Check if final cutoff reached
         if(now >= g_positions[i].cutoffTime && !g_positions[i].inTrailingMode)
         {
-            // Check spread filter
+            // Check spread filter before closing
             if(!IsSpreadAcceptable(g_positions[i].symbol))
             {
                 Print("Delaying final close for #", g_positions[i].ticket, 
-                      " - spread too high (", GetCurrentSpread(g_positions[i].symbol), 
-                      " > ", InpMaxSpreadPoints, ")");
+                      " - spread too high (", GetCurrentSpread(g_positions[i].symbol), " > ", InpMaxSpreadPoints, ")");
                 continue;
             }
             
             // Either close immediately or enter trailing mode
             if(InpUseTrailing && InpTrailDistance > 0 && g_positions[i].currentPnL > 0)
             {
+                // Enter trailing mode instead of closing
                 g_positions[i].inTrailingMode = true;
                 Print("Position #", g_positions[i].ticket, " entered TRAILING MODE at cutoff");
             }
             else
             {
+                // Close remaining position
                 ClosePosition(i);
             }
         }
@@ -1391,239 +1056,6 @@ void CheckCutoffs()
             CheckTrailingStop(i);
         }
     }
-}
-
-
-//+------------------------------------------------------------------+
-//| v2.3.0: Calculate True Breakeven Stop Loss Price                 |
-//+------------------------------------------------------------------+
-double CalculateBreakevenSL(PositionData &pos)
-{
-    double tickSize = SymbolInfoDouble(pos.symbol, SYMBOL_TRADE_TICK_SIZE);
-    double tickValue = SymbolInfoDouble(pos.symbol, SYMBOL_TRADE_TICK_VALUE);
-    double point = SymbolInfoDouble(pos.symbol, SYMBOL_POINT);
-    
-    if(tickSize <= 0 || tickValue <= 0 || point <= 0)
-    {
-        Print("ERROR: Invalid tick data for ", pos.symbol, 
-              " tickSize=", tickSize, " tickValue=", tickValue, " point=", point);
-        return pos.openPrice; // Fallback to entry
-    }
-    
-    // Commission cost in price points
-    // Commission is per lot round-trip, need to convert to price points
-    double commissionPerSide = pos.commissionPaid / 2; // Per-side commission
-    double commissionCost = commissionPerSide * pos.initialLots * 2; // Round-trip total cost
-    
-    // Convert commission to points
-    // tickValue = value of 1 tick per 1.0 lot
-    // tickSize = price change per tick
-    double ticksPerPoint = tickSize / point;
-    double commissionTicks = commissionCost / (tickValue * pos.initialLots);
-    double commissionPoints = commissionTicks * tickSize / point;
-    
-    // Spread at entry (already in points)
-    double spreadPoints = pos.entrySpread;
-    
-    // Total adjustment needed
-    double totalPoints = commissionPoints + spreadPoints;
-    
-    // Round to symbol's price precision
-    int digits = (int)SymbolInfoInteger(pos.symbol, SYMBOL_DIGITS);
-    double adjustment = NormalizeDouble(totalPoints * point, digits);
-    
-    // Calculate SL based on position type
-    if(pos.type == ORDER_TYPE_BUY)
-        return NormalizeDouble(pos.openPrice - adjustment, digits);
-    else
-        return NormalizeDouble(pos.openPrice + adjustment, digits);
-}
-
-//+------------------------------------------------------------------+
-//| v2.3.0: Apply Breakeven Stop Loss to Position                    |
-//+------------------------------------------------------------------+
-bool ApplyBreakeven(int idx)
-{
-    ulong ticket = g_positions[idx].ticket;
-    string symbol = g_positions[idx].symbol;
-    
-    // Verify position still exists
-    if(!PositionSelectByTicket(ticket))
-    {
-        Print("Position #", ticket, " closed before breakeven could be applied");
-        LogBreakevenAttempt(ticket, "POSITION_CLOSED", 0, 0, 0, 0);
-        g_positions[idx].breakevenApplied = true; // Mark as done
-        return false;
-    }
-    
-    // Get current SL
-    double currentSL = PositionGetDouble(POSITION_SL);
-    double currentTP = PositionGetDouble(POSITION_TP);
-    
-    // Calculate target breakeven SL
-    double targetSL = CalculateBreakevenSL(g_positions[idx]);
-    
-    // Check if current SL is already better (tighter) than breakeven
-    if(g_positions[idx].type == ORDER_TYPE_BUY && currentSL > targetSL)
-    {
-        Print("Position #", ticket, " SL already tighter than breakeven (", 
-              currentSL, " > ", targetSL, "). Skipping.");
-        LogBreakevenAttempt(ticket, "SKIP_TIGHTER", targetSL, currentSL, 
-                           MathAbs(targetSL - g_positions[idx].openPrice), 0);
-        g_positions[idx].breakevenApplied = true;
-        return true;
-    }
-    
-    if(g_positions[idx].type == ORDER_TYPE_SELL && currentSL < targetSL && currentSL != 0)
-    {
-        Print("Position #", ticket, " SL already tighter than breakeven (", 
-              currentSL, " < ", targetSL, "). Skipping.");
-        LogBreakevenAttempt(ticket, "SKIP_TIGHTER", targetSL, currentSL,
-                           MathAbs(targetSL - g_positions[idx].openPrice), 0);
-        g_positions[idx].breakevenApplied = true;
-        return true;
-    }
-    
-    // Validate price distance from market
-    double currentPrice = (g_positions[idx].type == ORDER_TYPE_BUY) ?
-                          SymbolInfoDouble(symbol, SYMBOL_BID) :
-                          SymbolInfoDouble(symbol, SYMBOL_ASK);
-    
-    long freezeLevel = SymbolInfoInteger(symbol, SYMBOL_TRADE_FREEZE_LEVEL);
-    long stopsLevel = SymbolInfoInteger(symbol, SYMBOL_TRADE_STOPS_LEVEL);
-    double minDistance = MathMax(freezeLevel, stopsLevel) * _Point;
-    
-    double priceDistance = MathAbs(currentPrice - targetSL);
-    
-    if(priceDistance < minDistance)
-    {
-        Print("WARNING: Cannot apply breakeven to #", ticket, 
-              ". Market too close to target SL (distance: ", 
-              DoubleToString(priceDistance/_Point, 1), 
-              " pts, min: ", DoubleToString(minDistance/_Point, 1), " pts). Abandoning.");
-        LogBreakevenAttempt(ticket, "FAIL_MARKET_CLOSE", targetSL, currentSL,
-                           MathAbs(targetSL - g_positions[idx].openPrice), 0);
-        g_positions[idx].breakevenApplied = true; // Don't retry
-        return false;
-    }
-    
-    // Attempt modification using MqlTradeRequest
-    MqlTradeRequest request = {};
-    MqlTradeResult result = {};
-    
-    request.action = TRADE_ACTION_SLTP;
-    request.position = ticket;
-    request.symbol = symbol;
-    request.sl = targetSL;
-    request.tp = currentTP; // Keep existing TP
-    
-    if(!OrderSend(request, result))
-    {
-        int error = GetLastError();
-        Print("Breakeven modify failed for #", ticket, " Error: ", error, 
-              " Retcode: ", result.retcode);
-        
-        // Check if market is too close
-        if(error == 146 || // ERR_TRADE_MODIFY_DENIED
-           result.retcode == 10021 || // TRADE_RETCODE_TOO_CLOSE
-           result.retcode == 10022)   // TRADE_RETCODE_PRICE_CHANGED
-        {
-            Print("Market too close - abandoning breakeven for #", ticket);
-            LogBreakevenAttempt(ticket, "FAIL_MARKET_CLOSE", targetSL, currentSL,
-                               MathAbs(targetSL - g_positions[idx].openPrice), error);
-            g_positions[idx].breakevenApplied = true; // Don't retry
-            return false;
-        }
-        
-        // Other errors - will retry on next tick if retry count permits
-        LogBreakevenAttempt(ticket, "FAIL_OTHER", targetSL, currentSL,
-                           MathAbs(targetSL - g_positions[idx].openPrice), error);
-        return false;
-    }
-    
-    // Success
-    g_positions[idx].breakevenApplied = true;
-    g_positions[idx].breakevenTime = TimeCurrent();
-    
-    double adjustmentPoints = MathAbs(targetSL - g_positions[idx].openPrice) / _Point;
-    Print("Breakeven SUCCESS for #", ticket, ": SL moved to ", targetSL, 
-          " (entry: ", g_positions[idx].openPrice, ", adjustment: ", 
-          DoubleToString(adjustmentPoints, 1), " pts)");
-    
-    LogBreakevenAttempt(ticket, "SUCCESS", targetSL, currentSL, adjustmentPoints, 0);
-    
-    return true;
-}
-
-//+------------------------------------------------------------------+
-//| v2.3.0: Log Breakeven Attempt to CSV                             |
-//+------------------------------------------------------------------+
-void LogBreakevenAttempt(ulong ticket, string result, double targetSL, 
-                         double prevSL, double adjustmentPoints, int errorCode)
-{
-    string filename = InpBreakevenLogFile;
-    bool fileExists = FileIsExist(filename, FILE_COMMON);
-    
-    int handle = FileOpen(filename, FILE_WRITE|FILE_READ|FILE_CSV|FILE_COMMON, ',');
-    if(handle == INVALID_HANDLE)
-    {
-        // Try creating new file
-        handle = FileOpen(filename, FILE_WRITE|FILE_CSV|FILE_COMMON, ',');
-        if(handle == INVALID_HANDLE)
-        {
-            Print("ERROR: Cannot open breakeven log file: ", filename);
-            return;
-        }
-    }
-    
-    // If new file, write header
-    if(!fileExists || FileSize(handle) == 0)
-    {
-        FileWrite(handle, "Timestamp", "Ticket", "Session", "Result", 
-                  "EntryPrice", "TargetSL", "PreviousSL", "AdjustmentPts",
-                  "CommissionUsed", "ErrorCode");
-    }
-    
-    // Move to end for append
-    FileSeek(handle, 0, SEEK_END);
-    
-    // Find position to get session info
-    string sessionStr = "UNKNOWN";
-    double entryPrice = 0;
-    double commission = g_detectedCommissionPerLot;
-    
-    for(int i = 0; i < g_positionCount; i++)
-    {
-        if(g_positions[i].ticket == ticket)
-        {
-            switch(g_positions[i].session)
-            {
-                case SESSION_ASIA:      sessionStr = "ASIA"; break;
-                case SESSION_LONDON:    sessionStr = "LONDON"; break;
-                case SESSION_LONDON_NY: sessionStr = "LONDON_NY"; break;
-                case SESSION_NY:        sessionStr = "NY"; break;
-                case SESSION_NY_ASIA:   sessionStr = "NY_ASIA"; break;
-            }
-            entryPrice = g_positions[i].openPrice;
-            commission = g_positions[i].commissionPaid;
-            break;
-        }
-    }
-    
-    // Write log entry
-    FileWrite(handle, 
-        TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
-        IntegerToString(ticket),
-        sessionStr,
-        result,
-        DoubleToString(entryPrice, 5),
-        DoubleToString(targetSL, 5),
-        DoubleToString(prevSL, 5),
-        DoubleToString(adjustmentPoints, 2),
-        DoubleToString(commission, 2),
-        IntegerToString(errorCode));
-    
-    FileClose(handle);
 }
 
 //+------------------------------------------------------------------+
@@ -1645,10 +1077,9 @@ bool IsSpreadAcceptable(string symbol)
     return spread <= InpMaxSpreadPoints;
 }
 
-
 //+------------------------------------------------------------------+
 //| Partial Close Position                                           |
-//| Closes calculated percentage of position volume                  |
+//| Closes InpPartialClosePct% of position volume                    |
 //+------------------------------------------------------------------+
 void PartialClosePosition(int idx)
 {
@@ -1705,6 +1136,7 @@ void PartialClosePosition(int idx)
     double remainingVolume = currentVolume - lotsToClose;
     if(remainingVolume < minLot && remainingVolume > 0)
     {
+        // Close entire position instead of leaving sub-minimum lot
         Print("Remaining volume (", remainingVolume, ") would be below minimum, closing full position");
         ClosePosition(idx);
         return;
@@ -1712,7 +1144,8 @@ void PartialClosePosition(int idx)
     
     Print("Executing partial close for #", ticket, 
           ": closing ", DoubleToString(lotsToClose, 2), " of ", 
-          DoubleToString(currentVolume, 2), " lots");
+          DoubleToString(currentVolume, 2), " lots (", 
+          DoubleToString(InpPartialClosePct, 0), "%)");
     
     //--- Attempt partial close using CTrade
     if(!Trade.PositionClosePartial(ticket, lotsToClose))
@@ -1732,7 +1165,7 @@ void PartialClosePosition(int idx)
             return;
         }
         
-        // Retry on next tick
+        // Retry on next tick (don't mark as done)
         return;
     }
     
@@ -1745,7 +1178,7 @@ void PartialClosePosition(int idx)
     
     Print("Partial close SUCCESS for #", ticket, 
           ". Closed: ", DoubleToString(lotsToClose, 2), 
-          ". Remaining: ", DoubleToString(g_positions[idx].lots, 2), " lots");
+          " lots. Remaining: ", DoubleToString(g_positions[idx].lots, 2), " lots");
 }
 
 //+------------------------------------------------------------------+
@@ -1754,20 +1187,21 @@ void PartialClosePosition(int idx)
 void ClosePosition(int idx)
 {
     ulong ticket = g_positions[idx].ticket;
-    double lots = g_positions[idx].lots;
+    double lots = g_positions[idx].lots;  // May be reduced after partial close
     string symbol = g_positions[idx].symbol;
     
     //--- Check retry limit
     if(g_positions[idx].closeRetryCount >= InpMaxCloseRetries)
     {
         Print("ERROR: Max retries (", InpMaxCloseRetries, ") exceeded for position #", ticket);
-        g_positions[idx].closed = true;
+        g_positions[idx].closed = true; // Mark as closed to stop trying
         return;
     }
     
-    //--- Verify position still exists
+    //--- Verify position still exists before attempting close
     if(!PositionSelectByTicket(ticket))
     {
+        // Position already closed (likely by EA hitting TP/SL)
         Print("Position #", ticket, " already closed (not found in position pool)");
         g_positions[idx].closed = true;
         return;
@@ -1799,8 +1233,9 @@ void ClosePosition(int idx)
         // Check for specific error conditions
         if(retcode == TRADE_RETCODE_POSITION_CLOSED || 
            retcode == TRADE_RETCODE_DONE ||
-           error == 4753)
+           error == 4753) // Keep for backward compatibility
         {
+            // Position was already closed
             Print("Position #", ticket, " was already closed (detected post-failure)");
             g_positions[idx].closed = true;
             return;
@@ -1817,6 +1252,7 @@ void ClosePosition(int idx)
     }
     
     //--- Close request accepted by server
+    // Do NOT use Sleep() - instead, mark as pending and verify on next tick
     g_positions[idx].closeState = CLOSE_STATE_PENDING;
     g_positions[idx].lastCloseAttempt = TimeCurrent();
     g_positions[idx].pendingCloseTicket = Trade.ResultOrder();
@@ -1846,7 +1282,9 @@ void CheckTrailingStop(int idx)
     //--- Validate price data
     if(currentPrice <= 0)
     {
-        Print("ERROR: Invalid price data for ", g_positions[idx].symbol);
+        Print("ERROR: Invalid price data for ", g_positions[idx].symbol, 
+              " Bid: ", SymbolInfoDouble(g_positions[idx].symbol, SYMBOL_BID),
+              " Ask: ", SymbolInfoDouble(g_positions[idx].symbol, SYMBOL_ASK));
         return;
     }
     
@@ -2002,7 +1440,6 @@ void SaveRecoveryData()
     Print("Saved ", savedCount, " loss records to ", filename);
 }
 
-
 //+------------------------------------------------------------------+
 //| Cleanup Closed Positions from Array                              |
 //| NOTE: Cannot use ArrayCopy on structs with string members in MQL5|
@@ -2017,7 +1454,7 @@ void CleanupClosedPositions()
     
     if(activeCount == g_positionCount) return; // Nothing to clean
     
-    // Compact array in-place
+    // Compact array in-place (shift active elements to fill gaps)
     int writeIdx = 0;
     for(int readIdx = 0; readIdx < g_positionCount; readIdx++)
     {
@@ -2025,13 +1462,14 @@ void CleanupClosedPositions()
         {
             if(writeIdx != readIdx)
             {
+                // Copy element to new position
                 g_positions[writeIdx] = g_positions[readIdx];
             }
             writeIdx++;
         }
     }
     
-    // Resize array
+    // Resize array to remove dead elements
     ArrayResize(g_positions, activeCount);
     g_positionCount = activeCount;
     
@@ -2153,4 +1591,5 @@ void CreateRectangle(string name, int x, int y, int width, int height, color bgC
     ObjectSetInteger(0, name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
     ObjectSetInteger(0, name, OBJPROP_COLOR, C'40,40,40');
 }
+
 //+------------------------------------------------------------------+
