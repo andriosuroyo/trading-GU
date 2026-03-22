@@ -31,13 +31,20 @@ Build a self-optimizing, institutional-grade XAUUSD scalping system consisting o
 3. **RecoveryManager** — Mean reversion opportunity tracking
 
 ### Current Team
-| Role | Name | Status | Start Date |
-|------|------|--------|------------|
-| Systems Architect | Viktor Kozlov | Active | 2026-03-20 |
-| Project Owner | Andrio Suroyo | Active | 2026-03-20 |
-| MQ5 Specialist | [Hiring] | Pending | TBD |
-| Quant Analyst | [Hiring] | Pending | TBD |
-| ML Engineer | [Hiring] | Pending | TBD |
+| Role | Name | Status | Start Date | Comms Protocol |
+|------|------|--------|------------|----------------|
+| Systems Architect | Viktor Kozlov | Active | 2026-03-20 | All via Andrio |
+| Project Owner | Andrio Suroyo | Active | 2026-03-20 | Hub for all comms |
+| MQ5 Specialist | [Hiring] | Pending | TBD | Via Andrio only |
+| Quant Analyst | [Hiring] | Pending | TBD | Via Andrio only |
+| ML Engineer | [Hiring] | Pending | TBD | Via Andrio only |
+
+### Communication Architecture
+```
+Viktor (Architect) ↔ Andrio (Owner) ↔ Team (Implementers)
+```
+**Rule:** No direct contact between Viktor and implementers. All flows through Andrio.
+**Rationale:** Single source of truth, reduced context switching, clear authority chain.
 
 ### Technology Stack
 - **Platform:** MetaTrader 5 (Windows)
@@ -47,6 +54,14 @@ Build a self-optimizing, institutional-grade XAUUSD scalping system consisting o
 - **Notifications:** Discord Webhooks
 - **Version Control:** GitHub
 - **Project Management:** This roadmap + GitHub Issues
+- **Communication:** Andrio as hub (single point of contact)
+
+### MQ5 Specialist Profile (Confirmed)
+- ✅ Git proficient (branching, merging, conflict resolution)
+- ✅ Trading experience (understands XAUUSD, pips, sessions)
+- ✅ Will use own Windows/MetaEditor setup
+- ✅ Vantage Demo access provided by Andrio
+- ⏳ Start date: [TO BE FILLED]
 
 ---
 

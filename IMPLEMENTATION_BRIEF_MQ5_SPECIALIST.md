@@ -310,20 +310,55 @@ Before submitting any code for review, verify:
 
 ## 6. Communication Protocol
 
-### Daily Standup (Async)
+**CRITICAL:** All communication flows through Andrio (Project Owner). Direct contact with Viktor requires escalation.
 
-Post in [TO BE DETERMINED - Slack/Discord/Telegram]:
+### Communication Structure
 ```
-Yesterday: Fixed TCM session detection bug, tested Asia timing
-Today: Implementing GUS RSI score calculation
-Blockers: None
+MQ5 Specialist ↔ Andrio ↔ Viktor
 ```
 
-### Questions for Me
+### Message Categories & Response Times
 
-**Urgent (blocks your work):** DM me, expect response within 4 hours during business hours (UTC+8)
-**Non-urgent:** Comment in GitHub issue, I'll respond within 24 hours
-**Architecture questions:** Schedule 30-min call, I prefer voice for complex discussions
+| Category | Definition | Path | Response Time |
+|----------|------------|------|---------------|
+| **URGENT** | Blocks all work, cannot proceed | MQ5 → Andrio → Viktor (immediate) → Andrio → MQ5 | 4 hours total |
+| **STANDARD** | Question needs answer, work can continue | MQ5 → Andrio → Viktor (within 8h) → MQ5 | 24 hours total |
+| **ARCHITECTURE** | Design decision needed | Schedule call: MQ5 + Andrio + Viktor | 48 hours to schedule |
+| **STATUS** | Daily progress update | MQ5 → Andrio only | End of day |
+
+### Daily Status Format (Send to Andrio)
+
+**Subject:** GUS Daily - [Date]
+```
+COMPLETED:
+- Implemented RSI score calculation (4 hours)
+- Fixed ATR division by zero bug (2 hours)
+
+IN PROGRESS:
+- MACD momentum score (est. 4 hours remaining)
+
+BLOCKERS:
+- None
+
+QUESTIONS FOR VIKTOR:
+- [STANDARD] Should MACD histogram use 5-bar or 10-bar slope?
+
+TOMORROW:
+- Complete MACD score
+- Start ATR ratio score
+```
+
+### Escalation Protocol
+
+**If Andrio is unavailable for >8 hours and you have URGENT blocker:**
+1. Document blocker in GitHub issue with `urgent` label
+2. Continue with other tasks if possible
+3. If completely blocked, wait for Andrio
+
+**DO NOT:**
+- Contact Viktor directly
+- Make architectural decisions without approval
+- Guess at requirements when unclear
 
 ### Bug Reports
 
