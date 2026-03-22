@@ -27,7 +27,7 @@
 
 | Component | Version | Status | Location |
 |-----------|---------|--------|----------|
-| TimeCutoffManager | 2.2.0 | **LIVE - Partial close verified** | `Experts/TimeCutoffManager.mq5` |
+| TimeCutoffManager | 2.2.0 | **LIVE - Stable** | `Experts/TimeCutoffManager_v2.2.0_backup.mq5` |
 | GU Manager | 1.0.0 | Stable | `Experts/GUM/GUManager.mq5` |
 
 **Header Convention for WIP:**
@@ -43,7 +43,45 @@
 
 ---
 
-## 🔴 PENDING TESTS (Windows/MT5 Machine Required)
+## 🔴 IMMEDIATE PRIORITY: TCM v2.3.0 Testing
+
+> **Current Status:** Code implemented on macOS, ready for Windows/MT5 testing  
+> **File to Test:** `Experts/TimeCutoffManager.mq5` (v2.3.0 - WORK IN PROGRESS)  
+> **Backup Available:** `Experts/TimeCutoffManager_v2.2.0_backup.mq5` (stable v2.2.0)
+
+### Pre-Flight Checks (Before Live Test)
+- [ ] Pull latest repo on Windows machine
+- [ ] Open `TimeCutoffManager.mq5` in MetaEditor
+- [ ] Verify header shows "VERSION 2.3.0 - WORK IN PROGRESS"
+- [ ] Compile (F7) - should compile without errors
+- [ ] If compile errors → DM me immediately with error messages
+
+### Core Functionality Tests
+- [ ] **Session Detection:** Open position at 04:00 server time (Asia), verify dashboard shows "ASIA"
+- [ ] **Session Detection:** Open position at 10:00 server time (London), verify dashboard shows "LONDON"
+- [ ] **Session Detection:** Open position at 19:00 server time (NY), verify dashboard shows "NY"
+- [ ] **Partial Close:** 0.03 lot position → verify 0.02 closes at partial time, 0.01 at final time
+- [ ] **Breakeven:** After partial close triggers, verify SL moved to entry + commission adjustment
+- [ ] **Breakeven CSV:** Check `tcm_breakeven_log.csv` created in `MQL5/Files/`
+
+### Configuration Tests
+- [ ] **Legacy Mode:** Set `InpUseSessionTiming=false` → should behave like v2.2.0
+- [ ] **Session Mode:** Set `InpUseSessionTiming=true` → verify different timings per session
+- [ ] **Commission Display:** Dashboard shows detected commission (e.g., "Comm: $4.00/lot")
+
+### Error Handling Tests
+- [ ] **Market Too Close:** If price too close to entry at partial time, breakeven should abandon (log shows "FAIL_MARKET_CLOSE")
+- [ ] **SL Already Tighter:** If SL already better than breakeven, should skip (log shows "SKIP_TIGHTER")
+
+### Rollback Protocol (If Critical Bug Found)
+1. Remove TCM v2.3.0 from chart
+2. Compile and attach `TimeCutoffManager_v2.2.0_backup.mq5`
+3. DM me bug details
+4. I fix on macOS, push update
+
+---
+
+## 🟡 PENDING TESTS (General Backlog)
 
 > **Status:** [ ] = Not Started | [~] = In Progress | [x] = Passed | [!] = Failed
 
@@ -86,6 +124,7 @@
 | **News Blackout** | 2.3.0 or 2.4.0 | [RFC] | HIGH | Pause closes during NFP/FOMC (5 min before/after) |
 | **Dynamic Spread Filter** | 2.3.0 or 2.4.0 | [RFC] | MEDIUM | Session-based spread thresholds |
 | **Daily Loss Circuit Breaker** | 2.4.0 | [RFC] | MEDIUM | Stop monitoring if daily loss > threshold |
+| **GUS Scoring Engine** | 1.0.0 | [RFC] | HIGH | Self-optimizing trade quality scoring — RFC 002 approved, **WAITING for TCM v2.3.0 test** |
 | **Slippage Monitoring** | 2.4.0 | [RFC] | LOW | Log expected vs actual close prices |
 | **Telegram Notifications** | 2.4.0 | [RFC] | LOW | Send close alerts to mobile |
 
