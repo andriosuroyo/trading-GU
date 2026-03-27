@@ -1,5 +1,11 @@
 # TimeCutoffManager - Documentation
 
+> [!IMPORTANT]
+> **Documentation Update Notice:** Examples in this file use deprecated session-based magic numbers (28260311, 28260312, 28260313).
+> Current system uses sequential magics (1, 2, 3...) with strategy encoded in CommentTag.
+> Filter by Comment "GU_" instead of Magic Number for current setup.
+> See `knowledge_base.md` for current system details.
+
 ## Overview
 
 TimeCutoffManager is an MQL5 utility EA that monitors positions opened by other EAs and enforces time-based cutoffs with automatic closure. It features a real-time dashboard with countdown timers and tracks losses for recovery strategies.

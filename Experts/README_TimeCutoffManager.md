@@ -34,11 +34,17 @@ A MetaTrader 5 utility that:
 ### 2. Configure
 ```
 Input Settings:
-- MagicNumberFilter: 28260311 (your EA's magic)
-- DefaultCutoffSeconds: 120 (2 minutes)
+- Filter Method: Comment Contains
+- Filter Value: GU_          [Current system — filters all GU positions]
+- DefaultCutoffSeconds: 120  (2 minutes)
 - WarningSeconds: 10
 - TrackLosses: true
 ```
+
+> [!NOTE]
+> Old system used MagicNumberFilter with session-based magics (28260311, etc.).
+> Current system uses Comment filter for all GU positions.
+> See knowledge_base.md for current magic number system.
 
 ### 3. Run
 ```

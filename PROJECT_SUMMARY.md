@@ -218,7 +218,7 @@ find . -name "*TCM*" -o -name "*TimeCutoff*"
 **Lot Sizes:** Minimum 0.01, Step 0.01  
 
 **Current Test:**  
-- GU Asia: 0.03 lots per trade  
+- Strategy m1052005: 0.03 lots per trade  
 - TCM: Closes 0.02 at 1min, 0.01 at 2min  
 
 ---

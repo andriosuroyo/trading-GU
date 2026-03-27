@@ -166,22 +166,31 @@ The dashboard shows:
 
 ## Usage Examples
 
-### Example 1: Monitor All GU Asia Positions (by Magic Number)
+> [!NOTE]
+> **Examples below use deprecated session-based magic system (11, 12, 13...).**
+> Current system uses sequential magics (1, 2, 3...) with strategy in CommentTag.
+> See `knowledge_base.md` for current system details.
+
+### Example 1: Monitor by Comment (Recommended)
+```
+Filter Method: Comment Contains
+Filter Value: GU_
+Duration Type: Minutes
+Close Duration: 2
+Use Partial Close: true
+Partial Close Duration: 1
+Warning Seconds: 10
+```
+
+### Example 2: Legacy — Monitor by Magic Number (Old System)
 ```
 Filter Method: Magic Number
-Filter Value: 11,21,31
+Filter Value: 11,21,31  [DEPRECATED — use Comment filter instead]
 Duration Type: Minutes
 Close Duration: 2
 Use Partial Close: false
 Warning Seconds: 10
 ```
-
-### Example 2: Monitor by Comment (All Asia Session EAs)
-```
-Filter Method: Comment Contains
-Filter Value: GU_ASIA
-Duration Type: Minutes
-Close Duration: 5
 Use Partial Close: false
 ```
 
