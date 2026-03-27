@@ -1,6 +1,18 @@
 # GU Strategy — EA Knowledge Base
 
-> **Persona**: 20-year veteran in technical trading, focusing on **scalping and intraday trading**.
+> **Persona**: 20-year veteran in technical trading, focusing on **scalping and intraday trading**.  
+> **Last Updated:** 260327  
+> **Ground Truth:** This file is the single source of truth for project knowledge
+
+---
+
+## ⚠️ Recent Changes (Last 30 Days)
+
+| Date | Change | Old | New |
+|------|--------|-----|-----|
+| 260323 | Magic Number System | Session-based (11-13, 21-23, 31-33) | Sequential (1, 2, 3...) with strategy in CommentTag |
+| 260323 | Setfile Organization | By session (Asia/London/NY) | By strategy parameters (MA, timeframe, ATR mult) |
+| 260323 | Trading Hours | Session-specific (02-06, 08-12, 17-21 UTC) | Unified (02:00-23:00 market time) |
 
 ---
 
@@ -9,13 +21,13 @@
 **Scalping EA** on XAUUSDp (Vantage Demo) — opens via MA crossover on M1, single position per signal (MaxLevels=1), closes via trailing stop activation or time-based cutoff. Has news filter, trading hour restrictions, daily loss stop.
 
 > [!IMPORTANT]
-> **Strategy Pivot (March 17, 2026):** Moving away from `MaxLevels=2` (grid/layering) to **`MaxLevels=1`** (single position) with **TimeCutoffManager** controlling position duration. Analysis showed that grid strategy was hiding catastrophic losses, especially in London session. Time-based discipline produces better risk-adjusted returns.
->
+> **Strategy Pivot (March 23, 2026):** Complete restructuring of setfile organization and magic number system.
+> 
 > **Key Changes:**
-> - Single position per entry signal (no averaging)
-> - TimeCutoffManager enforces maximum position duration
-> - Trailing stop captures momentum beyond initial targets
-> - Fixed profit targets ($1-$6) with trail activation
+> - Magic numbers now sequential (1, 2, 3...) not session-encoded
+> - Strategy parameters encoded in CommentTag (e.g., `GU_m1052005`)
+> - Trading window unified to 02:00-23:00 (avoids 01:00-02:00 open volatility and 23:00-23:58 close volatility)
+> - Session analysis still relevant for performance review but not for setfile organization
 
 > [!NOTE]
 > GU sets moved from BlackBull Demo to **Vantage Demo** (Mar 2026) because Vantage has significantly better ping (**8 ms vs 80 ms**). Since we're exploring scalping strategies, this latency difference is material.
@@ -30,261 +42,111 @@
 > [!IMPORTANT]
 > The EA interprets `InpStartHour` / `InpEndHour` as **UTC+0 (GMT)**, NOT MT5 server time (UTC+2).
 >
-> | Session | Setfile Hours (UTC) | Actual Server Hours (UTC+2) | Verified from data |
-> |---|---|---|---|
-> | ASIA | 02:00–06:00 | 04:00–08:00 | ✅ positions at 04,05,06,07 |
-> | LONDON | 08:00–12:00 | 10:00–14:00 | ✅ positions at 10,11,12,13 |
-> | NY | 17:00–21:00 | 19:00–23:00 | ✅ positions at 17-21 (DST adjusted) |
+> **Current Trading Window:** 02:00–23:00 UTC (avoids opening volatility 01:00-02:00 and closing volatility 23:00-23:58)
 
 ---
 
-## Core EA Parameters (Corrected)
+## Current Setfile System (March 23, 2026+)
+
+### Setfile Naming Convention
+
+```
+gu_[timeframe][MAFast][MASlow][ATRTPMult].set
+
+Examples:
+  gu_m1052005.set = M1 chart, MA 5/20, ATR TP Mult 0.5x
+  gu_m1208005.set = M1 chart, MA 20/80, ATR TP Mult 0.5x
+  gu_m1104005.set = M1 chart, MA 10/40, ATR TP Mult 0.5x
+
+Where:
+  - timeframe: m1 = 1-min, m6 = 6-min chart
+  - MAFast: Fast MA period (2 digits)
+  - MASlow: Slow MA period (2 digits)  
+  - ATRTPMult: ATR multiplier for TP × 10 (05 = 0.5x, 10 = 1.0x)
+```
+
+### Magic Number System
+
+**Current System (Sequential):**
+- Magic numbers are assigned sequentially: 1, 2, 3, 4, 5...
+- Strategy identification is in the CommentTag, NOT the magic number
+- Example: Magic=1, Comment="GU_m1052005"
+
+**Why This Changed:**
+- Previous system (11-13, 21-23, 31-33) encoded session information
+- New system allows flexible strategy testing without session constraints
+- Session analysis still performed post-trade but doesn't dictate setfile organization
+
+### Active Setfiles (20260322/)
+
+| Setfile | Magic | CommentTag | MA | ATR TP |
+|---------|-------|------------|-----|--------|
+| `gu_m1052005.set` | 1 | GU_m1052005 | 5/20 | 0.5x |
+| `gu_m1104005.set` | 2 | GU_m1104005 | 10/40 | 0.5x |
+| `gu_m1208005.set` | 3 | GU_m1208005 | 20/80 | 0.5x |
+| `gu_m1501H05.set` | 4 | GU_m1501H05 | 150/1H | 0.5x |
+| `gu_m1502H05.set` | 5 | GU_m1502H05 | 150/2H | 0.5x |
+| `gu_m11H2H05.set` | 6 | GU_m11H2H05 | 1H/2H | 0.5x |
+| `gu_m1104003.set` | 7 | GU_m1104003 | 10/40 | 0.3x |
+| `gu_m1104007.set` | 8 | GU_m1104007 | 10/40 | 0.7x |
+| `gu_m5052003.set` | 9 | GU_m5052003 | 5/20 | 0.3x |
+| `gu_m5052005.set` | 10 | GU_m5052005 | 5/20 | 0.5x |
+
+---
+
+## Core EA Parameters
 
 ### Entry Logic
-- **MH**: MA 20/80 on M1
-- **HR05**: MA 5/20 on M1
-- **HR10**: MA 10/40 on M1
-- **Position Type**: Single position per signal (`InpMaxLevels = 1`)
+All strategies use MA crossover on M1:
+- **MA periods** vary by setfile (encoded in filename)
+- **Position Type:** Single position per signal (`InpMaxLevels = 1`)
+- **Trading Window:** 02:00-23:00 UTC (unified, avoids open/close volatility)
 
 ### Exit Logic (Fixed TP + Trailing Stop)
 
-**New Configuration (March 17, 2026):**
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| `InpUseATRTPTarget` | `true` | Enable ATR-based TP |
+| `InpATRPeriod` | 60 | ATR(60) on M1 |
+| `InpTPIATRMult` | 0.5x (default) | Set by filename (03, 05, 07) |
+| `InpUseBasketTrail` | `true` | Trailing stop enabled |
+| `InpTrailStartMoney` | $3.00 | Per 0.10 lot |
+| `InpTrailStepMoney` | $1.00 | Per 0.10 lot |
 
-| Parameter | Function | Asia | London | NY | Full-Time |
-|-----------|----------|------|--------|-----|-----------|
-| `InpMaxLevels` | Max positions per basket | 1 | 1 | 1 | 1 |
-| `InpUseATRTPTarget` | Enable ATR-based TP | `false` | `false` | `false` | `false` |
-| `InpTargetProfitMoney` | Fixed TP target | **$1.00** | **$2.00** | **$6.00** | **$1.00** |
-| `InpUseBasketTrail` | Enable trailing stop | `true` | `true` | `true` | `true` |
-| `InpTrailStartMoney` | Trail activation | $0.50 | $1.00 | $1.00 | $0.50 |
-| `InpTrailStepMoney` | Trail step | $0.40 | $0.60 | $0.60 | $0.40 |
-| `InpInitialLots` | Lot size | 0.10 | 0.10 | 0.10 | 0.02 |
-
-**Time-Based Cutoff:** Controlled by **TimeCutoffManager** utility EA for all sets. No longer relying on `InpMaxBasketHours` (doesn't work reliably).
-
-**Key Principle:** Lower win rate (60-70%) with higher TP targets beats high win rate (80%+) with low targets. Trailing stop captures 67-546% more profit than fixed TP alone.
-
-### Deprecated Parameters (No Longer Used)
-The following are set but **NOT WORKING as intended** or **DEPRECATED**:
-- `InpAvoidOvernight` — Positions are not being force-closed at day end
-- `InpMaxBasketHours` — Time-based force-close not functioning (use TimeCutoffManager instead)
-- `InpUseATRStep` / `InpStepATRMult` — Disabled in favor of fixed step = 0
-- `InpUseATRTPTarget` / `InpTPIATRMult` — Disabled in favor of fixed TP targets
-- `InpStepPoints` — Set to 0 (grid disabled)
+**Time-Based Cutoff:** Controlled by **TimeCutoffManager (TCM)** utility EA.
+- Partial close: 50% at 1 minute
+- Final close: remainder at 2 minutes
 
 ---
 
-## GU Strategy Sets & Magic Number Convention
+## Session Analysis (For Performance Review Only)
 
-All GU strategies run on **Vantage Demo**. Magic numbers encode the strategy and session:
+While strategies are no longer organized by session, session-based analysis is still valuable for identifying poorly performing time periods.
 
-**Taxonomy (Simplified)**
-- **Baseline (2-digit):** `10, 11, 12, 13, 20, 21, 22, 23, 30, 31, 32, 33`
-- **Tests (3-digit):** `110, 111, 112, 113, 114, 115, 116, 117...`
+### Session Definitions (UTC+0)
 
-| Digits | Strategy | Session Mapping |
-|--------|----------|-----------------|
-| `10` | MH Full | 0 = Full-Time |
-| `11` | MH ASIA | 1 = ASIA (02-06 UTC) |
-| `12` | MH LONDON | 2 = LONDON (08-12 UTC) |
-| `13` | MH NY | 3 = NY (17-21 UTC) |
-| `20` | HR05 Full | — |
-| `21` | HR05 ASIA | — |
-| `22` | HR05 LONDON | — |
-| `23` | HR05 NY | — |
-| `30` | HR10 Full | — |
-| `31` | HR10 ASIA | — |
-| `32` | HR10 LONDON | — |
-| `33` | HR10 NY | — |
+| Session | UTC Hours | Server Time (UTC+2) | Purpose |
+|---------|-----------|---------------------|---------|
+| ASIA | 02:00–06:00 | 04:00–08:00 | Legacy reference |
+| LONDON | 08:00–12:00 | 10:00–14:00 | Legacy reference |
+| NY | 17:00–21:00 | 19:00–23:00 | Legacy reference |
 
-*Note: MH and HR are NOT acronyms. They are simply strategy identifiers.*
+**Current Trading Window:** 02:00-23:00 UTC (overlaps all sessions)
+
+### How to Identify Session from Position Data
+
+Use `OpenTime` to categorize positions by session for analysis:
+- Asia session positions: OpenTime between 02:00-06:00 UTC
+- London session positions: OpenTime between 08:00-12:00 UTC
+- NY session positions: OpenTime between 17:00-21:00 UTC
 
 ---
 
 ## User Preferences (Intraday Rules)
-- **Strict Adherence to Structure:** Mathematical edges are generated by executing valid setups against proven structure. Do not "gamble" on unmanaged positions (trades carried outside their valid trading window must be scrubbed from data).
-- **Overnight & R/R Avoidance:** Aim for day closes. Optimize parameters that protect the historical 85%+ win rate instead of prioritizing sheer volume.
+
+- **Strict Adherence to Structure:** Mathematical edges are generated by executing valid setups against proven structure. Do not "gamble" on unmanaged positions.
+- **Overnight & R/R Avoidance:** Aim for day closes. Current 02:00-23:00 window helps avoid overnight risk.
 - **P/L Normalization:** All profit/loss must be converted to **0.01 lot equivalent** for consistent comparison. Currently trading 0.10 lots → divide P/L by 10.
-
----
-
-## Current Active Setfiles (March 17, 2026)
-
-> [!IMPORTANT]
-> **Active From: March 17, 2026 (20260317)**
-> 
-> These setfiles are now the active configuration for live trading. All previous setfiles (20260313 and earlier) are deprecated.
-
-All setfiles located in: `Setfiles/20260317/`
-
-### Session Sets (Magic 11-13, 21-23, 31-33)
-
-| Setfile | Magic | Strategy | Session | Lot Size | TP | Trail Start | Trail Step |
-|---------|-------|----------|---------|----------|-----|-------------|------------|
-| `gu_mh_asia.set` | 11 | MH | Asia | 0.10 | **$10.00** | $3.00 | $1.00 |
-| `gu_mh_london.set` | 12 | MH | London | 0.10 | **$20.00** | $8.00 | $1.00 |
-| `gu_mh_ny.set` | 13 | MH | NY | 0.10 | **$20.00** | $5.00 | $1.00 |
-| `gu_hr10_asia.set` | 21 | HR10 | Asia | 0.10 | **$10.00** | $3.00 | $1.00 |
-| `gu_hr10_london.set` | 22 | HR10 | London | 0.10 | **$20.00** | $8.00 | $1.00 |
-| `gu_hr10_ny.set` | 23 | HR10 | NY | 0.10 | **$20.00** | $5.00 | $1.00 |
-| `gu_hr05_asia.set` | 31 | HR05 | Asia | 0.10 | **$10.00** | $3.00 | $1.00 |
-| `gu_hr05_london.set` | 32 | HR05 | London | 0.10 | **$20.00** | $8.00 | $1.00 |
-| `gu_hr05_ny.set` | 33 | HR05 | NY | 0.10 | **$20.00** | $5.00 | $1.00 |
-
-**Common Settings:**
-- `InpMaxLevels = 1` (single position, no grid)
-- `InpUseATRTPTarget = false` (fixed TP)
-- `InpUseBasketTrail = true` (trailing enabled)
-- `InpUseATRStep = false` (no grid step)
-- `CooldownMin = 1`
-
-### Full-Time Sets (TimeCutoffManager Controlled)
-
-| Setfile | Magic | Strategy | Lot Size | TP | Trail Start | Trail Step |
-|---------|-------|----------|----------|-----|-------------|------------|
-| `gu_mh_full.set` | 10 | MH | 0.02 | **$2.00** | $0.60 | $0.20 |
-| `gu_hr10_full.set` | 20 | HR10 | 0.02 | **$2.00** | $0.60 | $0.20 |
-| `gu_hr05_full.set` | 30 | HR05 | 0.02 | **$2.00** | $0.60 | $0.20 |
-
-**Full-Time Settings:**
-- `InpMaxLevels = 1` (conservative single position)
-- `InpUseTradingHours = false` (no time restraint)
-- Controlled by **TimeCutoffManager** for position duration
-- Comment: `GU_FULL`
-
-### SL Maestro Configurations
-
-| Setfile | Targets | Session | ATR TF | ATR Period | Multiplier | Range (pips) |
-|---------|---------|---------|--------|------------|------------|------------|--------------|
-| `sl_asia.set` | Comment GU_ASIA | Asia | M1 | 60 | 1.5x | 150-300 pips (config: 150-300) |
-| `sl_london.set` | Comment GU_LONDON | London | M1 | 60 | 2.5x | 200-400 pips (config: 200-400) |
-| `sl_newyork.set` | Comment GU_NEWYORK | NY | M1 | 60 | 2.0x | 300-550 pips (config: 300-550) |
-| `sl_full.set` | Comment GU_FULL | All | M1 | 60 | 2.0x | 200-400 pips (config: 200-400) |
-
----
-
-## Setfile Creation Specification (March 17, 2026)
-
-**Use this as the reference for all future setfile creation.**
-
-### Magic Number Assignment Rules
-
-| First Digit | Strategy | MA Fast/Slow | Session (2nd digit) |
-|-------------|----------|--------------|---------------------|
-| **1** | MH | 20/80 | 0=Full, 1=Asia, 2=London, 3=NY |
-| **2** | HR10 | 10/40 | 0=Full, 1=Asia, 2=London, 3=NY |
-| **3** | HR05 | 5/20 | 0=Full, 1=Asia, 2=London, 3=NY |
-
-### Session-Specific Parameters
-
-| Parameter | Asia (0.10) | London (0.10) | NY (0.10) | Full-Time (0.02) |
-|-----------|-------------|---------------|-----------|------------------|
-| **UTC Hours** | 02:00-06:00 | 08:00-12:00 | 17:00-21:00 | 00:00-23:00 |
-| **InpUseTradingHours** | `true` | `true` | `true` | `false` |
-| **TP ($)** | $10.00 | $20.00 | $20.00 | $2.00 |
-| **Trail Start ($)** | $3.00 | $8.00 | $5.00 | $0.60 |
-| **Trail Step ($)** | $1.00 | $1.00 | $1.00 | $0.20 |
-| **Comment** | GU_ASIA | GU_LONDON | GU_NEWYORK | GU_FULL |
-| **MaxSpread** | 30 pts | 30 pts | 30 pts | 30 pts |
-| **Slippage** | 15 pts | 15 pts | 15 pts | 15 pts |
-
-> [!NOTE]
-> Values are scaled by lot size from normalized 0.01 lot base:
-> - Per 0.01 lot (base): Asia TP $1.00 / Trail $0.30/$0.10, London/NY TP $2.00 / Trail $0.50-0.80/$0.10, Full TP $1.00 / Trail $0.30/$0.10
-
-### Universal Parameters (All Sets)
-
-| Parameter | Value | Notes |
-|-----------|-------|-------|
-| `InpMaxLevels` | 1 | Single position only |
-| `InpUseBasketTrail` | `true` | Trailing stop enabled |
-| `InpUseATRTPTarget` | `false` | Fixed TP, not ATR |
-| `InpUseATRStep` | `false` | No grid step |
-| `InpStepPoints` | 0 | Grid disabled |
-| `InpCooldownMin` | 1 | 1 minute cooldown |
-| `InpMATF` | 1 | M1 timeframe |
-| `InpStartTwoMode` | 2 | Mode 2 (hedge mode if StartOpenTwo=true) |
-| `InpMaxBasketHours` | 1 | Basket time limit |
-| `InpAvoidOvernight` | `true` | Close before day end |
-| `InpUseNewsFilter` | `true` | News filter on |
-| `InpNewsMinImportance` | 2 | Medium & High news |
-| `InpNewsBlockBeforeMin` | 30 | 30 min before news |
-| `InpNewsBlockAfterMin` | 30 | 30 min after news |
-| `InpDailyLossStopPct` | 28.0 | Daily loss limit |
-| `InpMaxDDFromPeakPct` | 28.0 | Drawdown limit |
-| `InpUseDynamicSpread` | `true` | Dynamic spread filter |
-| `InpSpreadPctOfPrice` | 0.0003 | 0.03% spread limit |
-| `InpVerbose` | `true` | Verbose logging |
-
-### Special Parameters Documentation
-
-#### InpStartOpenTwo + InpStartTwoMode
-**Current setting:** `InpStartOpenTwo = false` (feature not used)
-
-If `InpStartOpenTwo` were enabled (`true`), `InpStartTwoMode` would control behavior:
-
-| Mode | Behavior | Description |
-|------|----------|-------------|
-| 1 | "signal" | Opens two positions on signal |
-| 2 | "hedge" | Opens BUY and SELL simultaneously (hedging) |
-| 3 | "buy x2" | Opens two BUY positions |
-| 4 | "sell x2" | Opens two SELL positions |
-
-**Note:** This feature has not been found particularly useful in practice, so it remains disabled.
-
-#### InpBypassFiltersOnStart
-**Current setting:** `false`
-
-If `true`, bypasses spread, news, and time filters on EA initialization. Exact behavior not fully verified.
-
----
-
-### SL Maestro Specification
-
-> [!NOTE]
-> **Pips vs Points:** SL Maestro uses **pips** where 1 pip = 10 points. The config values are in pips.
-> - Example: `sl_atr_min=150` means 150 pips (1500 points), not 150 points.
-
-| Config | Target Comment | ATR TF | Period | Multiplier | Floor (pips) | Cap (pips) |
-|--------|---------------|--------|--------|------------|--------------|------------|
-| sl_asia | GU_ASIA | M1 | 60 | 1.5 | 150 | 300 |
-| sl_london | GU_LONDON | M1 | 60 | 2.5 | 200 | 400 |
-| sl_newyork | GU_NEWYORK | M1 | 60 | 2.0 | 300 | 550 |
-| sl_full | GU_FULL | M1 | 60 | 2.0 | 200 | 400 |
-
-### File Naming Convention
-
-- Session: `gu_[strategy]_[session].set` (e.g., `gu_mh_asia.set`)
-- Full-time: `gu_[strategy]_full.set` (e.g., `gu_hr10_full.set`)
-- SL Config: `sl_[session].set` or `sl_full.set`
-
-### Folder Structure
-
-Always create dated folder: `Setfiles/YYYYMMDD/`
-
----
-
-## [DEPRECATED] Historical Setfile Versions
-
-> [!WARNING]
-> The following sections document **deprecated configurations** for reference only.
-
-### Generation 3 TESTS (Mar 12, 2026) — RETIRED
-ATR-based targeting approach abandoned in favor of fixed TP + trailing stop.
-
-| Magic | Concept | TPIATRMult | StepATRMult | SL Maestro | MA | Notes |
-|---|---|---|---|---|---|---|
-| **282603110** | ATR(60) Conservative | `1.2` | `0.8` | `1.5` × M1_ATR60 | 20/80 | Retired |
-| **282603111** | ATR(60) Standard | `1.5` | `0.8` | `1.5` × M1_ATR60 | 20/80 | Retired |
-| **282603112** | ATR(60) Aggressive | `2.0` | `0.6` | `2.0` × M1_ATR60 | 20/80 | Retired |
-| **282603113** | ATR(60) Relaxed | `1.5` | `1.0` | `1.5` × M1_ATR60 | 20/80 | Retired |
-
-### Retired / Failed Configurations
-- **MaxLevels=2 (Grid Strategy)**: Hidden catastrophic losses, especially London. Abandoned for time-based discipline.
-- **10/40 MA + Cooldown=0** (e.g., Magic `28260305`): Too aggressive. Multiple rapid consecutive positions within single M1 candle lead to severe decay.
-- **Tight Trailing on M1 `0.20 / 0.08 / 0.02`**: Constant M1 whipsaw destroys win rate.
-- **ATR(14) with 0.2x multiplier**: Negative expectancy.
-- **Swing High/Low SL**: BANNED due to calculation bug on Vantage.
 
 ---
 
@@ -297,33 +159,10 @@ All GU strategies are monitored and assigned SL by **SL Maestro**, a chart-attac
 | ASIA | ATR-based: `clamp(M12_ATR7 × 1.5, 1500, 3000)` |
 | LONDON | ATR-based: `clamp(M12_ATR7 × 2.5, 2000, 4000)` |
 | NY | ATR-based: `clamp(M12_ATR7 × 2.0, 3000, 5500)` |
-| TESTS | ATR-Based: `1.5-2.0` × M1_ATR60 |
 
 **Key Points:**
 - GU has **NO INTERNAL SL** — relies entirely on SL Maestro
 - If SL Maestro is not running, positions have **NO STOP LOSS** (gambling scenario)
-- Swing High/Low logic is **BANNED** due to calculation bug on Vantage
-
----
-
-## Session Configurations
-
-| Parameter | ASIA | LONDON | NY |
-|---|---|---|---|
-| Start/End (UTC) | 02:00–06:00 | 08:00–12:00 | 17:00–21:00 |
-| News Filter | all (imp≥1), 30/45 | all, 30/45 | high only (imp≥2), 15/30 |
-| SL Multiplier | 1.5× | 2.5× | 2.0× |
-
----
-
-## 📅 Annual DST Adjustment Calendar (2026 Table)
-
-| Date Boundary | ASIA | LONDON | NEW YORK | Reasoning |
-|---|---|---|---|---|
-| **Early March (US Shifts to EDT)** | `02-06` | `08-12` | `17-21` | London is still GMT. US shifts to EDT, 5:00 PM rollover at 21:00 UTC. |
-| **Late March (UK Shifts to BST)** | `02-06` | `07-11` | `16-21` | London shifts to BST. London Fix at 15:00 UTC. |
-| **Late October (UK Ends BST)** | `02-06` | `08-12` | `17-21` | London reverts to GMT. Fix back to 16:00 UTC. |
-| **Early November (US Ends EDT)** | `02-06` | `08-12` | `17-22` | US reverts to EST. 5:00 PM Rollover at 22:00 UTC. |
 
 ---
 
@@ -341,7 +180,7 @@ All GU strategies are monitored and assigned SL by **SL Maestro**, a chart-attac
 | SL Management | **SL Maestro** (chart-attached utility) |
 | MT5 Server Time | UTC+2 |
 | EA Setfile Time | **UTC+0 (GMT)** |
-| Data Period | Mar 2 onwards, 2026 |
+| Data Period | Mar 23 onwards, 2026 (current system) |
 
 ---
 
@@ -358,542 +197,81 @@ Normalized P/L = (Raw P/L) / (Lot Size × 100)
 ### Invalid Trade Filtering
 All analyses must filter:
 1. **Glitch trades:** Simultaneous BUY/SELL at same timestamp
-2. **Carry-over trades:** Positions closing outside session window (unmanaged)
-3. **Non-GU magics:** Only analyze 282603xx range
+2. **Carry-over trades:** Positions closing outside trading window (unmanaged)
+3. **Non-GU comments:** Only analyze positions with "GU_" in comment
 
 ### Time Standard
 - **ALL** time analysis in **UTC+0** only
 - MT5 visual timezone is toxic — use `utc_history.csv` ground truth
 
----
-
-## March 13, 2026 — MaxLevels=1 Single-Position Scalping Analysis
-
-### Executive Summary
-Comprehensive analysis performed on 138 positions (March 12-13) to evaluate pure scalping strategy (MaxLevels=1, no grid/layering). **Critical finding: London requires time-based exits to be profitable.**
+### Magic Number Reference
+**Current (March 23+):** Sequential (1, 2, 3...), strategy in CommentTag  
+**Deprecated:** Session-based (11-13, 21-23, 31-33) — do not use for current analysis
 
 ---
 
-### Analysis Methodology
+## RGU (Recovery GU)
 
-**Dataset:**
-- 138 positions across Asia (19), London (75), NY (48)
-- Clean data from March 12, 2026 onwards
-- Excludes legacy 282603xx magic numbers
+See `RGU_instructions.md` for complete RGU documentation.
 
-**Key Metrics Analyzed:**
-1. First position quality ($0.20 TP hit rate per 0.01 lot)
-2. Time-based exit simulation (5-min, 10-min, 15-min)
-3. Target profit optimization ($0.20 to $5.00)
-
----
-
-### Finding 1: First Position Quality by Session
-
-**$0.20 TP Hit Rate (normalized per 0.01 lot):**
-
-| Session | TP Hit Rate | Avg Profit | Actual P/L |
-|---------|-------------|------------|------------|
-| **Asia** | **78.9%** | $0.51 | +$96.30 |
-| **London** | **71.8%** | -$1.89 | **-$1,340.30** |
-| **NY** | **83.3%** | $0.56 | +$267.70 |
-
-**Key Insight:** London's entries are GOOD (71.8% hit rate), but losing trades are held too long, accumulating massive losses. If only TP hits were kept: **+$374.80** instead of **-$1,340.30** (improvement: **+$1,715**).
+**Key Points:**
+- Monitors positions with "GU_" in comment
+- Activates when GU position hits SL
+- Creates RecoveryBasket, waits for GU confirmation
+- Up to 3 layers with ATR-based spacing
+- Optimal: ATR_Multiplier=1.0, MaxLayers=3, UseLayer1Immediate=false
 
 ---
 
-### Finding 2: Time-Based Exit Critical for London
+## TCM (TimeCutoffManager)
 
-**London Session — Time Exit Simulation:**
+See `TimeCutoffManager_Documentation_v2.md` for complete TCM documentation.
 
-| Exit Type | Win Rate | Total P/L | vs Actual |
-|-----------|----------|-----------|-----------|
-| Actual (no limit) | 71.8% | **-$1,340.30** | — |
-| **5-minute exit** | 67.6% | **+$265.20** | **+$1,605.50** ✅ |
-| **10-minute exit** | 69.0% | **+$247.20** | **+$1,587.50** ✅ |
-| 15-minute exit | 71.8% | +$306.20 | +$1,646.50 ✅ |
-
-**Conclusion:** London MUST have time-based exit. Without it, extended losing trades (>30 min) have 0% win rate and destroy profitability.
-
-**Asia & NY:** Time exits do NOT help — they cut winners prematurely.
+**Current Settings:**
+- Filter by Comment: "GU_" (not magic numbers)
+- Partial close: 50% at 1 minute
+- Final close: remainder at 2 minutes
+- Max spread: 500 points
 
 ---
 
-### Finding 3: Optimal Target Profit by Session
+## Knowledge Management Protocol
 
-**Target Profit Exploration (with 5-min exit for London, no exit for Asia/NY):**
+### Single Source of Truth
+This file (`knowledge_base.md`) is the **only authoritative source** of project knowledge.
 
-#### ASIA
-| Target | Win Rate | Total P/L | Recommendation |
-|--------|----------|-----------|----------------|
-| $0.20 | 68.4% | $0.47 | Too low |
-| **$0.40** | **57.9%** | **$2.98** | **OPTIMAL** ✅ |
-| $0.60 | 15.8% | $4.12 | Win rate drops |
-| $1.00+ | <11% | — | Not viable |
+### When Knowledge Changes:
+1. User notifies PM of change
+2. PM updates this file immediately
+3. PM marks old info as DEPRECATED with date
+4. PM updates all derived documents
+5. PM notifies all staff of change
 
-#### LONDON (with 5-min exit)
-| Target | Win Rate | Total P/L | Recommendation |
-|--------|----------|-----------|----------------|
-| $0.20 | 64.0% | $6.48 | Too conservative |
-| $0.40 | 40.0% | $14.56 | — |
-| $0.60 | 18.7% | $18.52 | — |
-| **$1.00** | **12.0%** | **$22.51** | **OPTIMAL** ✅ |
-| $1.50 | 8.0% | $25.77 | Higher profit, lower WR |
+### Staff Must Not:
+- Create conflicting knowledge documents
+- Assume other files are authoritative
+- Propagate knowledge without validating against this file
 
-#### NY
-| Target | Win Rate | Total P/L | Recommendation |
-|--------|----------|-----------|----------------|
-| $0.20 | 77.1% | $1.94 | Too low |
-| **$0.40** | **77.1%** | **$9.34** | **CONSERVATIVE** ✅ |
-| $0.60 | 52.1% | $15.93 | Balanced |
-| $1.50 | 10.4% | $22.38 | Aggressive option |
+### PM Must:
+- Scour every interaction for new info to record
+- Update this file within 24 hours of learning new information
+- Cross-reference all decisions against this file
+- Archive outdated info with clear deprecation markers
 
 ---
 
-### Finding 4: Session Duration Characteristics
+## Deprecated Information (Do Not Use)
 
-**Average Trade Duration:**
-- **Asia:** 5.4 minutes — Quick scalps, time exit unnecessary
-- **London:** 9.2 minutes — Volatile, benefits from time discipline
-- **NY:** 2.6 minutes — Fastest, natural short duration
+### Magic Number System (Deprecated March 23, 2026)
+**OLD:** `11=Asia, 12=London, 13=NY, 21=HR10 Asia, etc.`  
+**NEW:** Sequential numbers (1, 2, 3...), strategy in CommentTag  
+**Reason:** Decoupled strategy from session for more flexible testing
 
-**Duration Distribution (Winners):**
-- **< 5 minutes:** Asia 86.7% WR, London 88.9% WR, NY 90.2% WR
-- **> 30 minutes:** London 0% WR (catastrophic)
-
----
-
-### Updated Setfile Conventions
-
-#### Magic Number Structure (CONFIRMED)
-
-| First Digit | Strategy | Session (Second Digit) |
-|-------------|----------|------------------------|
-| **1** | MH | 0=Full, 1=Asia, 2=London, 3=NY |
-| **2** | HR10 | 0=Full, 1=Asia, 2=London, 3=NY |
-| **3** | HR05 | 0=Full, 2=London, 3=NY |
-
-**Comment Format:**
-- Active sets: `GU_ASIA`, `GU_LONDON`, `GU_NEWYORK`, `GU_FULLTIME`
-- Test sets: `GU_TEST_XXX` (where XXX = 3-digit magic number)
-
-#### Lot Size by Set Type
-
-| Set Type | Lot Size | Example |
-|----------|----------|---------|
-| Session (Asia/London/NY) | **0.10** | gu_mh_asia.set |
-| Full-time | **0.02** | gu_mh_full.set |
-| Test | **0.01** | gu_test_112.set |
-
-#### Filename Convention
-- Session: `gu_[strategy]_[session].set` (e.g., `gu_mh_asia.set`)
-- Full-time: `gu_[strategy]_full.set` (e.g., `gu_hr10_full.set`)
-- NY naming: `gu_*_ny.set` (NOT `newyork`)
+### Session-Based Setfiles (Deprecated March 23, 2026)
+**OLD:** `gu_mh_asia.set, gu_mh_london.set, gu_mh_ny.set`  
+**NEW:** `gu_m1052005.set, gu_m1208005.set, etc.`  
+**Reason:** Strategy parameters now encoded in filename, not session
 
 ---
 
-### MaxLevels=1 Strategy Configuration
-
-**Core Settings (Pure Scalping, No Grid):**
-
-```ini
-InpMaxLevels=1
-InpUseATRStep=false
-InpStepPoints=0
-InpUseBasketTrail=false
-InpTrailStartMoney=0
-InpTrailStepMoney=0
-```
-
-**Session-Specific Optimizations:**
-
-| Parameter | ASIA | LONDON | NY |
-|-----------|------|--------|-----|
-| InpTargetProfitMoney | **$4.50** | **$3.50** | **$6.00** |
-| InpUseATRTPTarget | false | false | false |
-| Time Exit | None | **10 min** | None |
-| InpStartTwoMode | 2 | 2 | 2 |
-
-**Note:** For London aggressive scalping, use **$1.00 target with 5-min exit** instead of $3.50 with 10-min exit.
-
----
-
-### Files Created (March 13, 2026)
-
-**Standard Sets (17 files):**
-- `gu_mh_asia.set` through `gu_hr05_ny.set` (12 session sets)
-- `gu_mh_full.set`, `gu_hr10_full.set`, `gu_hr05_full.set` (3 full-time)
-- `gu_test_112.set` (1 test set)
-- `sl_asia.set`, `sl_london.set`, `sl_newyork.set`, `sl_test112.set` (4 SL sets)
-
-**MaxLevels=1 Sets (3 files):**
-- `gu_mh_asia_max1.set` — $4.50 target, no time exit
-- `gu_mh_london_max1.set` — $3.50 target, 10-min exit
-- `gu_mh_ny_max1.set` — $6.00 target, no time exit
-
----
-
-### Analysis Guidelines (Updated)
-
-**Per-Strategy Data Reliable From:** March 12, 2026
-- Before this date: Magic numbers mixed (282603xx), cannot distinguish MH/HR05/HR10
-- After this date: Clean 2-digit magic number convention
-
-**Data Grouping:**
-- **Before Mar 12:** Group by CommentTag only (GU_ASIA, GU_LONDON, GU_NEWYORK)
-- **Mar 12+:** Can breakdown by Magic Number (strategy-level analysis)
-
----
-
-### Key Takeaways
-
-1. **Asia:** Good for pure scalping. Use $4.50 target, no time exit needed.
-2. **London:** REQUIRES time-based exit. Without it, grid strategy hides catastrophic losses. Use $3.50 target + 10-min exit (or $1.00 + 5-min for aggressive).
-3. **NY:** Strongest performer. Can handle higher targets ($6.00) due to momentum.
-4. **MaxLevels=1** is viable for Asia/NY but **requires strict discipline** for London.
-5. **Duration is the enemy** for London — extended trades (>30 min) have 0% win rate.
-
----
-
-### Workflow Created
-
-**`create_gu_sets.py`** — Automated setfile generation
-- Creates date-stamped folders (YYYYMMDD)
-- Copies from Reference folder as template
-- Applies strategy-specific modifications
-- Generates both GU and SL Maestro files
-- Supports batch creation for all sessions
-
----
-
-## March 16, 2026 — Multi-TP Simulation & Session-Based Exit Optimization
-
-### Executive Summary
-
-Comprehensive multi-TP simulation analysis performed on 262 first-position trades across all sessions (Asia: 62, London: 85, NY: 115) from March 11-16, 2026. **Key finding: Session-specific TP and trailing stop configurations significantly outperform one-size-fits-all approaches. Trailing stop captures 67-546% more P&L than fixed TP in all sessions.**
-
----
-
-### Analysis Methodology
-
-**Dataset:**
-- 262 first positions (clean data, glitch baskets excluded)
-- Asia: 62 positions (Magic 28260311)
-- London: 85 positions (Magic 28260312)
-- NY: 115 positions (Magic 28260313)
-- Date range: March 11-16, 2026
-- All positions normalized to 0.01 lot for comparison
-
-**Simulation Parameters:**
-- TP levels tested: 30-300 points (10-point increments)
-- Time cutoff: 5 minutes (candle-close exit if TP not hit)
-- Trailing stop simulation: Variable start/distance per session
-- Point value: 1 point = $0.01 (0.01 lot)
-
-**Key Metrics:**
-- Win rate at each TP level
-- Miss loss (P&L when exiting at cutoff)
-- Total expected P&L
-- Comparison to actual trailing stop performance
-
----
-
-### Finding 1: Session Volatility Characteristics
-
-| Session | Positions | Actual Trailing P&L | Volatility Level | Optimal Fixed TP |
-|---------|-----------|---------------------|------------------|------------------|
-| **Asia** | 62 | **$79.96** | Low | 110 pts ($1.10) |
-| **London** | 85 | **$192.08** | High | 250 pts ($2.50) |
-| **New York** | 115 | **$64.24** | High | 250 pts ($2.50) |
-
-**Key Insight:** London is the most profitable session ($192) despite having fewer positions than NY. London's high volatility creates larger moves when captured correctly. Asia has consistent but smaller moves.
-
----
-
-### Finding 2: Fixed TP Optimization (5-Minute Cutoff)
-
-#### Best Fixed TP by Session
-
-| Session | Optimal TP | Win Rate | Expected P&L | Miss Loss Avg | Trade-off |
-|---------|------------|----------|--------------|---------------|-----------|
-| **Asia** | 110 pts ($1.10) | 78.7% | $24.22 | -$2.20 | Balanced |
-| **London** | 250 pts ($2.50) | 58.8% | $29.73 | -$1.13 | P&L focused |
-| **NY** | 250 pts ($2.50) | 61.9% | $38.51 | -$4.73 | P&L focused |
-
-**Critical Finding: Lower win rates (59-79%) with higher TPs produce MORE profit than high win rates (80%+) with lower TPs.**
-
-Example trade-off (NY):
-- TP 125 pts: 79% win rate → $5.90 P&L
-- TP 250 pts: 62% win rate → $38.51 P&L (+552% better)
-
----
-
-### Finding 3: Trailing Stop vs Fixed TP Comparison
-
-| Session | Fixed TP Best | Trailing Actual | Improvement | Win Rate |
-|---------|---------------|-----------------|-------------|----------|
-| **Asia** | $24.22 | **$79.96** | **+230%** | 79-87% |
-| **London** | $29.73 | **$192.08** | **+546%** | 59-79% |
-| **NY** | $38.51 | **$64.24** | **+67%** | 62-88% |
-
-**Conclusion:** Trailing stop dramatically outperforms fixed TP in ALL sessions by capturing momentum beyond initial targets. Fixed TP should only be used if trailing implementation is problematic.
-
----
-
-### Finding 4: Conservative Settings (Anti-Overfitting)
-
-To avoid overfitting to current data, conservative TP values were tested:
-
-| Configuration | Asia P&L | London P&L | NY P&L | Total P&L | vs Optimal |
-|---------------|----------|------------|--------|-----------|------------|
-| **Conservative** | $35.86 | $44.51 | $47.23 | **$127.60** | -62% |
-| (TP 100/200/200) | | | | | |
-| **Optimal** | $79.96 | $192.08 | $64.24 | **$336.28** | — |
-| (Actual trailing) | | | | | |
-
-**Trade-off:** Conservative settings sacrifice $208 (-62%) to reduce overfitting risk. This is the cost of robustness across different market conditions.
-
----
-
-### Finding 5: Time-Based Exit Analysis
-
-**5-Minute Cutoff is Optimal for Fixed TP:**
-- Shorter (< 5 min): Too many misses, reduced P&L
-- Longer (> 5 min): Miss losses compound excessively
-- 5 minutes balances capture rate vs time decay
-
-**Miss Loss Progression (London example):**
-- 2-min cutoff: -$0.45 avg per miss
-- 5-min cutoff: -$3.20 avg per miss  
-- 10-min cutoff: -$6.50 avg per miss
-- 20-min cutoff: -$14.06 avg per miss
-
-**Conclusion:** Exit quickly if TP not hit. Time is the enemy for losing positions.
-
----
-
-### Recommended Configuration
-
-#### OPTION A: Trailing Stop (RECOMMENDED)
-
-| Session | Trail Start | Trail Distance | Breakeven | Expected P&L |
-|---------|-------------|----------------|-----------|--------------|
-| **Asia** | 50 pts ($0.50) | 40 pts ($0.40) | 30 pts | ~$36-40 |
-| **London** | 100 pts ($1.00) | 60 pts ($0.60) | 50 pts | ~$45-50 |
-| **NY** | 100 pts ($1.00) | 60 pts ($0.60) | 50 pts | ~$47-50 |
-
-**Rationale:**
-- Trail Start = 50% of conservative TP (locks in profit before trailing)
-- Trail Distance = 40-60% of TP (protects gains while allowing extension)
-- No breakeven feature needed (trail start serves similar purpose)
-
-#### OPTION B: Fixed TP (If trailing unavailable)
-
-| Session | TP Points | TP ($) | Time Cutoff | Expected P&L |
-|---------|-----------|--------|-------------|--------------|
-| **Asia** | 100 | $1.00 | 5 minutes | ~$19 |
-| **London** | 200 | $2.00 | 5 minutes | ~$22 |
-| **NY** | 200 | $2.00 | 5 minutes | ~$27 |
-
----
-
-### Practical Implementation
-
-**For EA Configuration:**
-
-1. **Trailing Stop Mode (preferred):**
-   ```
-   InpUseBasketTrail = true
-   InpTrailStartMoney = [see table above]
-   InpTrailStepMoney = [see table above]
-   InpTargetProfitMoney = 0 (disabled)
-   ```
-
-2. **Fixed TP Mode (fallback):**
-   ```
-   InpUseATRTPTarget = false
-   InpTargetProfitMoney = [see table above]
-   InpUseBasketTrail = false
-   InpMaxBasketMinutes = 5 (time exit)
-   ```
-
-**For SL Maestro:**
-- Trailing stop settings are independent of SL Maestro
-- SL Maestro provides downside protection (separate from exit logic)
-
----
-
-### Key Takeaways
-
-1. **Session matters:** London needs 2.5× TP of Asia due to volatility
-2. **Win rate is misleading:** 60% win rate with high TP beats 80% with low TP
-3. **Trailing stop wins:** 67-546% improvement over fixed TP in all sessions
-4. **Time decay is real:** 5-minute cutoff prevents catastrophic losses
-5. **Conservative vs optimal:** -62% P&L for +robustness trade-off exists
-
----
-
-### Data Quality Notes
-
-**Sample Size Limitations:**
-- 262 positions is relatively small for statistical significance
-- March 2026 market conditions may not persist
-- Conservative settings recommended until 500+ positions collected
-
-**Excluded Data:**
-- 3 glitch baskets (simultaneous BUY/SELL at same timestamp)
-- Positions before March 11, 2026 (different magic numbering)
-- All non-first positions in baskets (only first position analyzed)
-
----
-
-### Files Created
-
-**Analysis Scripts:**
-- `multi_tp_corrected.py` — Main simulation engine
-- `compare_sessions.py` — Session comparison analysis
-- `simulate_proposed_settings.py` — Conservative settings validation
-
-**Output Files:**
-- `multi_tp_corrected_results.csv` — Raw simulation data
-
----
-
-**Last Modified:** March 16, 2026
-
----
-
----
-
-## March 17, 2026 — TimeCutoffManager v2.0
-
-### Overview
-
-TimeCutoffManager (TCM) is a MetaTrader 5 utility EA that monitors positions opened by other EAs and enforces time-based cutoffs with automatic closure. Features a real-time dashboard with countdown timers and tracks losses for recovery strategies.
-
-**Key Improvement in v2.0:** Filter method is now a dropdown selection (single method) instead of multiple simultaneous filters, eliminating confusion about OR/AND logic.
-
----
-
-### Files
-
-| File | Purpose | Location |
-|------|---------|----------|
-| `TimeCutoffManager.mq5` | Main utility EA (v2.0) | `MQL5/Experts/` |
-| `TimeCutoffManager_Documentation_v2.md` | Complete usage guide | Project root |
-
----
-
-### Input Parameters
-
-#### Position Filter Method
-
-**Filter Method** (`InpFilterMethod`) - Dropdown
-| Option | Description | Filter Value Format |
-|--------|-------------|---------------------|
-| **(1) Magic Number** | Filter by magic number(s) | `"11,12,13"` or `"0"` for all |
-| **(2) Comment Contains** | Filter by comment text | `"GU_ASIA"` |
-| **(3) Symbol** | Filter by symbol(s) | `"XAUUSDp"` or `"XAUUSDp,GOLD"` |
-
-**Filter Value** (`InpFilterValue`) - String
-- Enter values based on selected Filter Method
-- Comma-separated for multiple values (Magic Number, Symbol methods)
-- Text match for Comment method
-
-#### Cutoff Settings
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| **Duration Type** | Dropdown | Minutes | Seconds / Minutes / Hours |
-| **Duration Value** | int | 5 | Numeric duration (e.g., 5 = 5 minutes) |
-| **Warning Seconds** | int | 10 | Seconds before cutoff to show yellow warning |
-| **Use Trailing** | bool | false | Enter trailing mode at cutoff (don't close) |
-| **Trail Distance** | double (pts) | 0 | Close if price retraces this many points from max |
-
-#### Dashboard Settings
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| Dashboard X/Y | int | 10, 30 | Position on chart |
-| Row Height | int | 20 | Row spacing |
-| **Background Color** | color | C'30,30,30' | Dashboard background |
-| Normal/Warning/Critical/Profit/Loss Color | color | various | Text colors |
-
-#### Recovery Tracking
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| Track Losses | bool | true | Enable loss tracking to CSV |
-| Recovery File | string | "loss_recovery.csv" | CSV filename |
-| Recovery Multiplier | double | 1.5 | Lot multiplier for recovery |
-
----
-
-### Recommended Session Configurations (v2.0)
-
-| Session | Filter Method | Filter Value | Duration | Notes |
-|---------|--------------|--------------|----------|-------|
-| **Asia** | Magic Number | `11,21,31` | 2 min | Quick scalps |
-| **London** | Magic Number | `12,22,32` | 6 min | Higher volatility |
-| **NY** | Magic Number | `13,23,33` | 15 min | Momentum development |
-| **Full-Time** | Comment | `GU_FULL` | 10 min | All full-time sets |
-
-**Alternative:** Use Comment filter with `GU_ASIA`, `GU_LONDON`, `GU_NEWYORK`, `GU_FULL` to monitor all strategies in a session.
-
-> [!NOTE]
-> Recommended durations are preliminary and based on prior analysis. These may require re-verification with MaxLevels=1 single-position data as more trades are collected.
-
----
-
-### Dashboard Display
-
-```
-+----------------------------------------------------------+
-|  TIME CUTOFF MANAGER (Gold header)                       |
-+----------------------------------------------------------+
-| Ticket | Symbol | Type | Lots | P&L | Countdown | Status |
-+----------------------------------------------------------+
-| 12345  | XAUUSD | BUY  | 0.10 | $25 | 2m 30s    | ACTIVE |
-| 12346  | XAUUSD | SELL | 0.10 | $-5 | 45s       | ACTIVE | ← Yellow
-| 12347  | XAUUSD | BUY  | 0.10 | $15 | TRAILING  | TRAILING | ← Aqua
-+----------------------------------------------------------+
-| Recovery Loss: $45.50                                    |
-+----------------------------------------------------------+
-```
-
-**Status Colors:**
-- White = Normal
-- Yellow = Warning (approaching cutoff)
-- Red = Critical (< 5 seconds)
-- Aqua = Trailing mode
-- Lime = Profit
-- Salmon = Loss
-
----
-
-### Key Settings Explained
-
-**Warning Before Close:**
-- X seconds BEFORE cutoff, dashboard turns yellow
-- Visual alert that position is about to close
-
-**Trailing Stop After Cutoff:**
-- When enabled, positions enter "trailing mode" at cutoff instead of closing
-- Tracks maximum profit reached
-- Closes if price retraces by Trail Distance from peak
-- Allows winners to run while protecting gains
-
----
-
-### Installation
-
-1. Copy `TimeCutoffManager.mq5` to `MQL5/Experts/`
-2. Compile in MetaEditor (F7)
-3. Attach to separate chart for monitoring
-4. Configure Filter Method and Filter Value
-5. Set Duration Type and Value
-6. Run 3 instances for 3 sessions (each with different filter values)
-
----
-
-**Last Modified:** March 17, 2026
+*This document is the single source of truth. All other documents must derive from and reference this file.*

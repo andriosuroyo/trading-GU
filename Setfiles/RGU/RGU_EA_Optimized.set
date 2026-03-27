@@ -1,0 +1,26 @@
+; RGU EA Optimized Settings
+; Based on March 23-25, 2026 Simulation Results
+; Expected Performance: +83,083 points / 3 days, 78% recovery rate
+
+; Filter Settings
+GUCommentFilter=GU_
+GUMagicNumbers=0
+
+; Recovery Entry Settings - OPTIMIZED (DO NOT CHANGE)
+ATRMultiplier=1.0
+MaxLayers=3
+UseLayer1Immediate=false
+EntryDistanceMax=5000
+
+; Recovery Exit Settings
+RecoveryWindowMin=120
+EmergencySLPoints=30000
+
+; Position Sizing
+LotSizePerLayer=0.01
+MaxTotalLots=0.05
+
+; Dashboard Settings
+DashboardX=10
+DashboardY=250
+RowHeight=18

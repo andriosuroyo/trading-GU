@@ -1,0 +1,57 @@
+[Expert]
+InpMagicNumber=2
+InpCommentTag=GU_m1104005
+InpStrategy=
+InpSession=Full
+; Entry Settings
+InpMATF=1
+InpMAFast=10
+InpMASlow=40
+InpStartOpenTwo=false
+InpStartTwoMode=2
+; Lot Settings
+InpInitialLots=0.01
+InpLotMultiplier=1.0
+InpMaxLevels=1
+InpMaxSingleLot=1.0
+InpMaxTotalLots=1.0
+; Grid/Step Settings (Disabled - using time-based cutoff)
+InpUseATRStep=false
+InpStepATRMult=0.0
+InpStepPoints=0
+; TP Settings - Fixed $1.00 with trailing
+InpUseATRTPTarget=true
+InpATRPeriod=60
+InpTPIATRMult=0.5
+InpTargetProfitMoney=10
+; Trailing Stop Settings
+InpUseBasketTrail=false
+InpTrailStartMoney=3.00
+InpTrailStepMoney=1.00
+; Time Settings - Asia 02:00-06:00 UTC
+InpUseTradingHours=false
+InpStartHour=1
+InpEndHour=23
+InpMaxBasketHours=1
+InpAvoidOvernight=true
+; News Filter
+InpUseNewsFilter=true
+InpNewsBlockBeforeMin=30
+InpNewsBlockAfterMin=30
+InpNewsMinImportance=2
+; Risk Management
+InpDailyLossStopPct=28.0
+InpMaxDDFromPeakPct=28.0
+InpEquityHardStopPct=28.0
+; Spread/Slippage
+InpSlippagePoints=15
+InpMaxSpreadPoints=30
+InpUseDynamicSpread=true
+InpSpreadPctOfPrice=0.0003
+; Cooldown
+InpCooldownMin=1
+; Other
+InpBypassFiltersOnStart=false
+InpPartialClose=false
+InpPartialPct=0.0
+InpVerbose=true

@@ -20,8 +20,22 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Agent-specific files (local only)
-.agents/
+# Agent-specific files (local only) - MOVED to track .agents/
+# .agents/ is now tracked for staff coordination
+
+# Compiled MQL5 files (generated from source)
+*.ex5
+
+# Excel lock files
+~$*.xlsx
+*.xlk
+
+# Recovery CSV files (runtime generated)
+recovery_*.csv
+
+# Temporary analysis outputs
+*.tmp
+*.temp
 
 # Archives (keep structure, ignore large files)
 archive/*.zip

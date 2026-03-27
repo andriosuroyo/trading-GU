@@ -1,6 +1,7 @@
 # Trading GU - Project Summary (Mobile View)
 
-> **Last Updated:** 2026-03-19  
+> **Last Updated:** 2026-03-27 17:00  
+> **Communication Protocol:** See `.agents/README.md`  
 > **For:** On-the-go reference without MT5 access
 
 ---
@@ -11,23 +12,26 @@
 
 **Core Components:**
 1. **GU Manager** - Main trading EA (opens positions based on sessions)
-2. **TimeCutoffManager (TCM)** - Risk manager (closes positions based on time)
-3. **Analysis Tools** - Python scripts for backtesting and optimization
+2. **TimeCutoffManager (TCM)** - Risk manager (closes positions based on time) — **CURRENTLY ACTIVE**
+3. **RGU (Recovery GU)** - *Work in progress* — Takes GU losses as signals for high-RR recovery trades
+4. **GUM (GU Manager v2)** - *Future consolidation* — Will eventually merge TCM + additional features
+5. **Analysis Tools** - Python scripts for backtesting and optimization
 
 ---
 
 ## 🏗️ Architecture Overview
 
+### Current Production Setup
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    METATRADER 5                             │
 │  ┌─────────────────┐      ┌─────────────────────────────┐  │
 │  │  GU Manager EA  │      │   TimeCutoffManager (TCM)   │  │
-│  │  (3 instances)  │◄────►│        (1 instance)         │  │
+│  │  (3 instances)  │◄────►│      v2.2 (ACTIVE)          │  │
 │  │                 │      │                             │  │
-│  │  - Asia (11)    │      │  Monitors positions from    │  │
-│  │  - London (12)  │      │  GU instances by Magic #    │  │
-│  │  - NY (13)      │      │                             │  │
+│  │  - Strategy 1   │      │  Monitors positions from    │  │
+│  │  - Strategy 2   │      │  GU instances by Comment    │  │
+│  │  - Strategy 3   │      │                             │  │
 │  │                 │      │  Closes at:                 │  │
 │  │  Opens trades   │      │  - 1 min: 50% (partial)     │  │
 │  │  based on time  │      │  - 2 min: 50% (remainder)   │  │
@@ -43,13 +47,17 @@
                     └──────────────────┘
 ```
 
+### In Development
+- **RGU EA** — Monitors `loss_recovery.csv` for GU losses, enters recovery trades
+- **GUM** — Future replacement consolidating TCM + recovery monitoring + analytics
+
 ---
 
 ## ⚙️ TCM v2.2 Current Settings
 
 ### Filter (What to Monitor)
 - **Method:** Magic Number
-- **Values:** `11,12,13` (GU Asia, London, NY instances)
+- **Value:** `0` (all GU positions) or filter by Comment "GU_"
 
 ### Timing (When to Close)
 | Stage | Time | Action | % Closed |
@@ -77,17 +85,36 @@ Max Spread Points: 500
 ## 📁 Key Files Reference
 
 ### Source Code (Experts/)
-| File | Purpose | Last Modified |
-|------|---------|---------------|
-| `TimeCutoffManager.mq5` | Risk manager EA | v2.2 - Partial close added |
-| `GUM/GUManager.mq5` | Main trading EA | v1.00 |
+| File | Purpose | Status |
+|------|---------|--------|
+| `TimeCutoffManager.mq5` | Risk manager EA | **ACTIVE v2.2** |
+| `RGU_EA.mq5` | Recovery EA | *In development* |
+| `GUM/GUManager.mq5` | Future consolidated manager | *Work in progress* |
 
 ### Configuration (Setfiles/)
-| Session | Magic | File Pattern |
-|---------|-------|--------------|
-| Asia | 11 | `gu_*_asia.set` |
-| London | 12 | `gu_*_london.set` |
-| New York | 13 | `gu_*_ny.set` |
+
+#### Setfile Naming Convention (Current)
+```
+gu_[timeframe][MAFast][MASlow][ATRTPMult].set
+
+Examples:
+  gu_m1052005.set = M1, MA 5/20, ATR TP Mult 0.5x
+  gu_m1208005.set = M1, MA 20/80, ATR TP Mult 0.5x
+  gu_m1104005.set = M1, MA 10/40, ATR TP Mult 0.5x
+
+Where:
+  - timeframe: m1 = 1-min, m6 = 6-min chart
+  - MAFast: Fast MA period (2 digits)
+  - MASlow: Slow MA period (2 digits)
+  - ATRTPMult: ATR multiplier for TP × 10 (05 = 0.5x, 10 = 1.0x)
+```
+
+#### Active Setfile Folders
+| Folder | Status | Description |
+|--------|--------|-------------|
+| `20260317/` | Legacy | Descriptive naming (gu_mh_asia.set) |
+| `20260322/` | **Current** | Coded naming per convention above |
+| `RGU/` | In dev | Recovery GU configuration |
 
 ### Documentation
 | File | Content |
@@ -95,8 +122,8 @@ Max Spread Points: 500
 | `TimeCutoffManager_Documentation_v2.md` | Full TCM manual |
 | `TCM_PreLive_Testing_Guide.md` | Testing procedures |
 | `TCM_Test_Checklist.md` | Validation checklist |
-| `GU_Manager_Documentation.md` | GU EA manual |
 | `knowledge_base.md` | Research and analysis |
+| `RGU_EA_Specification_v3.md` | RGU development spec |
 
 ### Analysis (analysis/)
 - Python scripts for backtesting
@@ -106,18 +133,22 @@ Max Spread Points: 500
 
 ## 🔄 Recent Changes (Last Session)
 
-### TCM v2.2 Updates
+### March 27, 2026
+- **File Cleanup:** Archived 18 superseded analysis scripts per QA audit
+- **Communication Protocol:** New `.agents/` naming system (`YYMMDDHHMM_Topic.md` + `_DONE` suffix)
+- **QA Delivery:** Cleaned position history delivered to MLE ✅
+- **RGU Bug:** ✅ 11 compilation errors **FIXED** — ready for testing
+- **MLE Task:** ON HOLD — insufficient data (need end of week); ✅ multi-setting approach decided (Option B: unified model)
+- **Setfile Convention:** Standardized coded naming format
+- **Team Charter:** Established operating rules for Coder, QA, MLE
+
+### TCM v2.2 Updates (March 19)
 1. ✅ **Partial Close** - Two-stage close (50% at 1min, 50% at 2min)
 2. ✅ **Master Switch** - `UsePartialClose` to toggle on/off
 3. ✅ **State Machine** - Replaced Sleep() with proper retry logic
 4. ✅ **Race Condition Fix** - Atomic position selection
 5. ✅ **Spread Filter** - Won't close into 500+ point spreads
 6. ✅ **File Mutex** - Multi-instance safety for recovery CSV
-
-### Git Repository
-- ✅ Initialized and synced to GitHub
-- ✅ Excluded large files (*.parquet, *.csv) for mobile sync
-- ✅ 245 files tracked, ~47K lines
 
 ---
 
@@ -138,6 +169,7 @@ Max Spread Points: 500
 - [ ] News blackout periods (NFP, FOMC)
 - [ ] Daily loss circuit breaker
 - [ ] Slippage monitoring
+- [ ] RGU EA integration with live trading
 
 ---
 

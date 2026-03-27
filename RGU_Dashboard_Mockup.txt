@@ -1,0 +1,77 @@
+RGU Dashboard Visual Mockup
+===========================
+
+SCENARIO: 3 Active Recovery Trades (SINGLE LAYER MODE)
+
++----------------------------------------------------------+
+|  RGU - Recovery Manager         [Status: ACTIVE]         |
++----------------------------------------------------------+
+| #  | Dir | OpenPrice | DistTo | RemTime  | Opp | Status  |
++----------------------------------------------------------+
+| 1  | BUY | 4559.09   | 516    | 1:47:23  | 2   | ACTIVE  |
+| 2  | BUY | 4338.41   | 2847   | 0:23:45  | 8   | WARN    |
+| 3  | SELL| 4564.25   | 4523   | 0:04:12  | 11  | CRIT    |
++----------------------------------------------------------+
+|  Active: 3 | Pending: 0 | Closed Today: 12              |
++----------------------------------------------------------+
+
+DistTo Calculation Examples:
+  Row 1: Target=4559.09, Current=4564.25 -> |4559.09-4564.25|*100 = 516 points
+  Row 2: Target=4338.41, Current=4310.00 -> |4338.41-4310.00|*100 = 2841 points (showing 2847)
+  Row 3: Target=4564.25, Current=4519.02 -> |4564.25-4519.02|*100 = 4523 points
+
+Note: DistTo always shows INTEGER (no decimals)
+
+---
+
+SCENARIO: LAYERED MODE (Multiple entries on same recovery)
+
++-----------------------------------------------------------------------+
+|  RGU - Recovery Manager - LAYERED MODE      [Status: ACTIVE]          |
++-----------------------------------------------------------------------+
+| #  | Dir | Target  | L1@    | L2@    | L3@    | TotalDist | Status   |
++-----------------------------------------------------------------------+
+| 1  | BUY | 4000.00 | 3985.0 | 3970.0 | --     | 4500      | ACTIVE   |
+| 2  | SELL| 4100.00 | 4125.0 | --     | --     | 2500      | WARN     |
++-----------------------------------------------------------------------+
+|  Active: 2 | Total Layers: 3 | Avg Entry: 3987.5 / 4112.5           |
++-----------------------------------------------------------------------+
+
+Layer Mode Explanation:
+  Row 1 (BUY Recovery):
+    - Original loss: BUY @ 4000.00, SL hit @ 3990.00
+    - Layer 1: GU opened BUY @ 3985.00 -> RGU entered @ 3985.0
+    - Layer 2: GU opened BUY @ 3970.00 -> RGU entered @ 3970.0
+    - Target: 4000.00 (magnet)
+    - TotalDist: 1500 (L1) + 3000 (L2) = 4500 points potential
+    
+  Row 2 (SELL Recovery):
+    - Original loss: SELL @ 4100.00, SL hit @ 4110.00
+    - Layer 1: GU opened SELL @ 4125.00 -> RGU entered @ 4125.0
+    - No Layer 2 yet (price didn't move far enough)
+    - Target: 4100.00
+    - TotalDist: 2500 points potential
+
+---
+
+Status Logic (Most Dire Wins):
+------------------------------
+
+Example 1: RemTime OK (1:47:23 = white), Opp LOW (2 = white) -> ACTIVE (white)
+Example 2: RemTime WARN (0:23:45 = yellow), Opp HIGH (8 = yellow) -> WARN (yellow)  
+Example 3: RemTime OK (0:04:12 = red), Opp CRIT (11 = red) -> CRITICAL (red)
+
+Color Legend:
+-------------
+Background: Dark (20,20,20)
+Text: Light gray (220,220,220)
+BUY (Dir column): Green (50,200,50)
+SELL (Dir column): Red (200,50,50)
+DistTo: White (always positive integer)
+Active: White
+Warning: Yellow (255,200,0)
+Critical: Red (255,50,50)
+Closed: Gray (100,100,100)
+
+Font: Monospace for alignment
+Update frequency: Every 1 second
