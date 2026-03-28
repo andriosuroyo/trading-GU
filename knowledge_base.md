@@ -26,15 +26,19 @@
 - **Recovery Rate:** ~88%
 - **Total Week P&L:** +335,763 points
 
-**Magic Number Performance (Active):**
-| Magic | Recovery PL | Rate | Status |
-|-------|-------------|------|--------|
-| 3 | +49,387 | 63.7% | ✅ Best |
-| 18 | +35,812 | 84.0% | ✅ Good |
-| 19 | +36,584 | 86.5% | ✅ Good |
-| 5 | **-2,353** | 73.3% | ⚠️ **Underperforming** |
+**Magic Number Performance (Active) — Week 1:**
+| Magic | Recovery PL | Rate | Status | Notes |
+|-------|-------------|------|--------|-------|
+| 3 | +49,387 | 63.7% | ✅ Best | — |
+| 18 | +35,812 | 84.0% | ✅ Good | — |
+| 19 | +36,584 | 86.5% | ✅ Good | — |
+| 5 | **-2,353** | 73.3% | ⚠️ **Monitoring** | One week insufficient data; continue observing |
 
 **Deactivated Magics:** 1, 7, 8, 9, 10, 11 (since March 24)
+
+> [!NOTE]
+> **Magic 5 Assessment:** One week of data is insufficient for deactivation decisions.
+> Will continue monitoring for extended period before any action.
 
 ---
 
