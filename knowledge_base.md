@@ -1,7 +1,7 @@
 # GU Strategy — EA Knowledge Base
 
 > **Persona**: 20-year veteran in technical trading, focusing on **scalping and intraday trading**.  
-> **Last Updated:** 260327  
+> **Last Updated:** 260328  
 > **Ground Truth:** This file is the single source of truth for project knowledge
 
 ---
@@ -10,9 +10,31 @@
 
 | Date | Change | Old | New |
 |------|--------|-----|-----|
+| 260328 | Recovery Window | 120 minutes (spec) | **12 hours** (Analysis-proven optimal) |
+| 260328 | ATR Multiplier | 1.0x (spec) | **3.0x** (Analysis-proven optimal) |
 | 260323 | Magic Number System | Session-based (11-13, 21-23, 31-33) | Sequential (1, 2, 3...) with strategy in CommentTag |
 | 260323 | Setfile Organization | By session (Asia/London/NY) | By strategy parameters (MA, timeframe, ATR mult) |
 | 260323 | Trading Hours | Session-specific (02-06, 08-12, 17-21 UTC) | Unified (02:00-23:00 market time) |
+
+### RecoveryAnalysis Findings (March 28, 2026)
+
+**Data Period:** March 23-27, 2026 (144 loss baskets analyzed)
+
+**Optimal Configuration Discovered:**
+- **Recovery Window:** 12 hours (was 2 hours in spec)
+- **ATR Multiplier:** 3x (was 1x in spec)
+- **Recovery Rate:** ~88%
+- **Total Week P&L:** +335,763 points
+
+**Magic Number Performance (Active):**
+| Magic | Recovery PL | Rate | Status |
+|-------|-------------|------|--------|
+| 3 | +49,387 | 63.7% | ✅ Best |
+| 18 | +35,812 | 84.0% | ✅ Good |
+| 19 | +36,584 | 86.5% | ✅ Good |
+| 5 | **-2,353** | 73.3% | ⚠️ **Underperforming** |
+
+**Deactivated Magics:** 1, 7, 8, 9, 10, 11 (since March 24)
 
 ---
 
@@ -214,12 +236,38 @@ All analyses must filter:
 
 See `RGU_instructions.md` for complete RGU documentation.
 
-**Key Points:**
-- Monitors positions with "GU_" in comment
-- Activates when GU position hits SL
-- Creates RecoveryBasket, waits for GU confirmation
-- Up to 3 layers with ATR-based spacing
-- Optimal: ATR_Multiplier=1.0, MaxLayers=3, UseLayer1Immediate=false
+### Optimal Configuration (Analysis-Proven)
+
+Based on RecoveryAnalysis (March 23-27, 2026, 144 baskets):
+
+| Parameter | Spec Value | **Analysis Optimal** | Change |
+|-----------|------------|----------------------|--------|
+| **RecoveryWindow** | 120 min | **12 hours (720 min)** | +6x longer |
+| **ATR_Multiplier** | 1.0x | **3.0x** | More conservative spacing |
+| **MaxLayers** | 3 | 3 | No change |
+| **UseLayer1Immediate** | false | false | No change |
+
+**Results at Optimal Config:**
+- Recovery Rate: **~88%**
+- Total Week P&L: **+335,763 points**
+- Plateau Point: 16H+ (minimal gain beyond 16 hours)
+
+### Key Insights from Analysis
+
+1. **Longer Window = Better**: 12H window captures 88% vs 79% at 2H
+2. **Conservative Spacing Wins**: 3x ATR > 2x > 1x for profitability
+3. **Fewer Better Layers**: 3x multiplier reduces over-trading, higher quality entries
+4. **Magic Performance Varies**: Magic 3 best (+49k), Magic 5 losing (-2k)
+
+### Daily RecoveryAnalysis
+
+QA generates daily RecoveryAnalysis reports:
+- **File:** `data/YYYY-MM-DD_RecoveryAnalysis.xlsx`
+- **Time:** 08:00 UTC daily
+- **Content:** 36 configuration sheets (2H-24H × 1x/2x/3x)
+- **Includes:** Per-magic performance, optimal config tracking
+
+See `RECOVERY_ANALYSIS_REPORT.md` for methodology.
 
 ---
 
