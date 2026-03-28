@@ -113,6 +113,25 @@ User ↔ PM ↔ Staff
 - Setfiles for consistency
 - Analysis outputs for anomalies
 
+## Conversation Start Protocol
+
+**MANDATORY: Run this at the start of EVERY conversation with User**
+
+```powershell
+# Check if DEV is behind GitHub (MAC may have pushed)
+$local = git rev-parse HEAD
+$remote = git rev-parse origin/main
+
+if ($remote -ne $local) {
+    Write-Host "⚠️ DEV BEHIND - PULLING NOW"
+    git pull origin main
+}
+```
+
+**Why:** Git must always mirror DEV. If MAC added files, DEV must pull immediately.
+
+---
+
 ## Success Metrics
 
 - [ ] All staff have clear, current tasks
@@ -120,6 +139,7 @@ User ↔ PM ↔ Staff
 - [ ] Knowledge base updated within 24h of changes
 - [ ] Blockers escalated within 4 hours
 - [ ] Tasks complete on schedule
+- [ ] **DEV always 100% synced with Git before work begins**
 
 ## History
 - 260327: Persona created
